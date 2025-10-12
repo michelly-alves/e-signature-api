@@ -1,39 +1,62 @@
-use crate::services::users::models::{CreateUser, UpdateUser, User};
+use crate::services::users::models::{CreateUser, Role, UpdateUser, User};
 use bcrypt::{DEFAULT_COST, hash};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use sqlx::PgPool;
 
-// --- Funções CRUD ---
-
-/// Cria um novo usuário no banco de dados
 pub async fn create_user(pool: &PgPool, new_user: CreateUser) -> Result<User, sqlx::Error> {
-    let password_hash = hash(new_user.password, DEFAULT_COST).expect("Failed to hash password");
+    let mut tx = pool.begin().await?;
+
+    let password_hash = hash(&new_user.password, DEFAULT_COST)
+        .map_err(|_| sqlx::Error::Protocol("Failed to hash password".into()))?;
 
     let user = sqlx::query_as!(
         User,
         r#"
-        INSERT INTO user_account (email, password_hash, role) 
-        VALUES ($1, $2, $3) 
-        RETURNING user_id, email, password_hash, role, created_at as "created_at!", updated_at, deleted_at
+        INSERT INTO user_account (email, password_hash, role)
+        VALUES ($1, $2, $3)
+        RETURNING user_id, email, password_hash, role as "role: _", created_at as "created_at!", updated_at, deleted_at
         "#,
         new_user.email,
         password_hash,
-        new_user.role.unwrap_or(0) // Default role = 0
+        new_user.role as i32
     )
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
+
+    if new_user.role == Role::Company {
+        let legal_name = new_user
+            .legal_name
+            .ok_or_else(|| sqlx::Error::Protocol("Missing 'legal_name' for company user".into()))?;
+        let tax_id = new_user.tax_id.ok_or_else(|| {
+            sqlx::Error::Protocol("Missing 'tax_id' (CNPJ) for company user".into())
+        })?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO company (legal_name, tax_id, contact_email, user_id)
+            VALUES ($1, $2, $3, $4)
+            "#,
+            legal_name,
+            tax_id,
+            &user.email,
+            user.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
 
     Ok(user)
 }
 
-/// Busca todos os usuários (que não foram deletados)
 pub async fn get_all_users(pool: &PgPool) -> Result<Vec<User>, sqlx::Error> {
     let users = sqlx::query_as!(
         User,
         r#"
-        SELECT user_id, email, password_hash, role, created_at as "created_at!", updated_at, deleted_at 
-        FROM user_account 
-        WHERE deleted_at IS NULL 
+        SELECT user_id, email, password_hash, role as "role: _", created_at as "created_at!", updated_at, deleted_at
+        FROM user_account
+        WHERE deleted_at IS NULL
         ORDER BY user_id
         "#
     )
@@ -42,13 +65,12 @@ pub async fn get_all_users(pool: &PgPool) -> Result<Vec<User>, sqlx::Error> {
     Ok(users)
 }
 
-/// Busca um usuário pelo ID
 pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>, sqlx::Error> {
     let user = sqlx::query_as!(
         User,
         r#"
-        SELECT user_id, email, password_hash, role, created_at as "created_at!", updated_at, deleted_at 
-        FROM user_account 
+        SELECT user_id, email, password_hash, role as "role: _", created_at as "created_at!", updated_at, deleted_at
+        FROM user_account
         WHERE user_id = $1 AND deleted_at IS NULL
         "#,
         user_id
@@ -58,15 +80,16 @@ pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>,
     Ok(user)
 }
 
-/// Atualiza os dados de um usuário
-pub async fn update_user(pool: &PgPool, user_id: i64, data: UpdateUser) -> Result<Option<User>, sqlx::Error> {
-    // Primeiro, busca o usuário para garantir que ele existe e para usar dados atuais como fallback
+pub async fn update_user(
+    pool: &PgPool,
+    user_id: i64,
+    data: UpdateUser,
+) -> Result<Option<User>, sqlx::Error> {
     let current_user = match get_user_by_id(pool, user_id).await? {
         Some(user) => user,
-        None => return Ok(None), // Se não encontrar, retorna None
+        None => return Ok(None),
     };
 
-    // Define os valores a serem atualizados, usando os dados atuais se nenhum novo for fornecido
     let email = data.email.unwrap_or(current_user.email);
     let role = data.role.unwrap_or(current_user.role);
     let now = Utc::now();
@@ -77,10 +100,10 @@ pub async fn update_user(pool: &PgPool, user_id: i64, data: UpdateUser) -> Resul
         UPDATE user_account
         SET email = $1, role = $2, updated_at = $3
         WHERE user_id = $4
-        RETURNING user_id, email, password_hash, role, created_at as "created_at!", updated_at, deleted_at
+        RETURNING user_id, email, password_hash, role as "role: _", created_at as "created_at!", updated_at, deleted_at
         "#,
         email,
-        role,
+        role as i32,
         now,
         user_id
     )
@@ -90,7 +113,6 @@ pub async fn update_user(pool: &PgPool, user_id: i64, data: UpdateUser) -> Resul
     Ok(Some(updated_user))
 }
 
-/// Realiza um "soft delete" (marca como deletado) em um usuário
 pub async fn delete_user(pool: &PgPool, user_id: i64) -> Result<u64, sqlx::Error> {
     let now = Utc::now();
     let result = sqlx::query!(
@@ -101,6 +123,5 @@ pub async fn delete_user(pool: &PgPool, user_id: i64) -> Result<u64, sqlx::Error
     .execute(pool)
     .await?;
 
-    // Retorna o número de linhas afetadas. Será 0 se o usuário não foi encontrado ou já estava deletado.
     Ok(result.rows_affected())
 }

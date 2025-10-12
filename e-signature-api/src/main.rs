@@ -2,6 +2,7 @@ use actix_web::{App, HttpResponse, HttpServer, Responder, get, web};
 use dotenv::dotenv;
 use sqlx::postgres::PgPoolOptions;
 
+mod bot;
 mod controllers;
 mod models;
 mod services;
@@ -20,8 +21,12 @@ async fn root() -> impl Responder {
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
 
-    // Conexão com o banco de dados
+    tokio::spawn(async {
+        bot::run_bot().await;
+    });
+
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
@@ -36,7 +41,9 @@ async fn main() -> std::io::Result<()> {
                 postgres_client: pool.clone(),
             }))
             .service(root)
-            .configure(controllers::users::config) // Configura as rotas de usuários
+            .service(controllers::otp::generate_otp)
+            .service(controllers::otp::verify_otp)
+            .configure(controllers::users::config)
     })
     .bind(("127.0.0.1", 8080))?
     .run()
