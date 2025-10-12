@@ -1,0 +1,17 @@
+[package]
+name = "e-signature-api"
+version = "0.1.0"
+edition = "2024"
+
+
+[dependencies]
+axum = "0.6"
+tokio = { version = "1", features = ["full"] }
+serde = {version =  "1.0", features = ["derive"]}
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+dotenv = "0.15"
+actix-web = "4.0"
+sqlx = { version = "0.8.6", features = ["postgres", "runtime-async-std", "chrono"] }
+uuid = { version = "1", features = ["v4"] }
+bcrypt = "0.17"
+chrono = { version = "0.4", features = ["serde"] }
