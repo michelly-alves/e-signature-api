@@ -1,9 +1,7 @@
-use actix_web::{HttpResponse, Responder, post, web};
+use actix_web::{post, web, HttpResponse, Responder};
 use chrono::{Duration, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
-use teloxide::utils::command::BotCommands;
 
 use crate::AppState;
 

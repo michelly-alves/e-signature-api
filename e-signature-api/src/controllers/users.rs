@@ -1,9 +1,8 @@
-use crate::AppState;
 use crate::services::auth;
-use crate::services::auth::Claims;
 use crate::services::users as user_service;
 use crate::services::users::models::{CreateUser, UpdateUser, User};
-use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, post, put, web};
+use crate::AppState;
+use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse, Responder};
 use serde::Deserialize;
 use serde_json;
 
@@ -132,23 +131,28 @@ async fn get_current_user_handler(req: HttpRequest, state: web::Data<AppState>) 
     let auth_header = match req.headers().get("Authorization") {
         Some(header) => header,
         None => {
-            return HttpResponse::Unauthorized()
-                .json(serde_json::json!("Token de autorização não fornecido."));
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "message": "Token de autorização não fornecido.",
+                "received_token": null
+            }));
         }
     };
 
     let auth_str = match auth_header.to_str() {
         Ok(s) => s,
         Err(_) => {
-            return HttpResponse::BadRequest()
-                .json(serde_json::json!("Valor de cabeçalho inválido."));
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "message": "Valor de cabeçalho inválido.",
+                "received_header": format!("{:?}", auth_header)
+            }));
         }
     };
 
     if !auth_str.starts_with("Bearer ") {
-        return HttpResponse::BadRequest().json(serde_json::json!(
-            "Formato de token inválido. Use: Bearer <token>"
-        ));
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": "Formato de token inválido. Use: Bearer <token>",
+            "received_header": auth_str
+        }));
     }
 
     let token = &auth_str["Bearer ".len()..];
@@ -165,13 +169,15 @@ async fn get_current_user_handler(req: HttpRequest, state: web::Data<AppState>) 
                     .json(serde_json::json!("Falha ao buscar usuário.")),
             }
         }
-        Err(_) => {
-            HttpResponse::Unauthorized().json(serde_json::json!("Token inválido ou expirado."))
-        }
+        Err(_) => HttpResponse::Unauthorized().json(serde_json::json!({
+            "message": "Token inválido ou expirado.",
+            "received_token": token
+        })),
     }
 }
 
 pub fn config(cfg: &mut web::ServiceConfig) {
+    println!("Módulo users carregado!");
     cfg.service(
         web::scope("/api")
             .service(login_handler)

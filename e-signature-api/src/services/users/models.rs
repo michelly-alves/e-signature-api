@@ -3,10 +3,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::decode::Decode;
 use sqlx::encode::{Encode, IsNull};
 use sqlx::error::BoxDynError;
-use sqlx::postgres::PgArgumentBuffer;
 use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::{FromRow, Type};
-use teloxide::utils::command::BotCommands;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
@@ -44,35 +42,30 @@ impl Decode<'_, sqlx::Postgres> for Role {
     }
 }
 
-// 2. Updated User Struct
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct User {
     pub user_id: i64,
     pub email: String,
     #[serde(skip_serializing)]
     pub password_hash: String,
-    pub role: Role, // Using the enum
+    pub role: Role,
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
     #[serde(skip)]
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
-// 3. Updated CreateUser Struct
 #[derive(Debug, Deserialize)]
 pub struct CreateUser {
     pub email: String,
     pub password: String,
-    pub role: Role, // Using the enum
-
-    // Optional fields for company
+    pub role: Role,
     pub legal_name: Option<String>,
-    pub tax_id: Option<String>, // CNPJ
+    pub tax_id: Option<String>,
 }
 
-// 4. Updated UpdateUser Struct
 #[derive(Debug, Deserialize)]
 pub struct UpdateUser {
     pub email: Option<String>,
-    pub role: Option<Role>, // Using the enum
+    pub role: Option<Role>,
 }

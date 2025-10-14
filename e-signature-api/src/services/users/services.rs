@@ -1,5 +1,5 @@
 use crate::services::users::models::{CreateUser, Role, UpdateUser, User};
-use bcrypt::{DEFAULT_COST, hash};
+use bcrypt::{hash, DEFAULT_COST};
 use chrono::Utc;
 use sqlx::PgPool;
 
