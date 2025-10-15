@@ -6,7 +6,7 @@ use chrono::Utc;
 use serde_json::json;
 use sqlx::PgPool;
 
-use crate::services::auth; 
+use crate::services::auth;
 
 #[post("/telegram/confirm")]
 pub async fn confirm_link(
@@ -24,7 +24,6 @@ pub async fn confirm_link(
 
     match link {
         Ok(Some(link)) => {
-
             let _ = sqlx::query(
                 "UPDATE telegram_links 
                  SET chat_id = $1, confirmed = TRUE, confirmed_at = $2 

@@ -45,6 +45,30 @@ pub async fn create_user(pool: &PgPool, new_user: CreateUser) -> Result<User, sq
         .await?;
     }
 
+    if new_user.role == Role::Signer {
+        let full_name = new_user
+            .full_name
+            .ok_or_else(|| sqlx::Error::Protocol("Missing 'full_name' for Signer user".into()))?;
+        let phone_number = new_user.phone_number
+            .ok_or_else(|| sqlx::Error::Protocol("Missing 'phone_number' for signer user".into()))?;
+        let national_id = new_user.national_id
+            .ok_or_else(|| sqlx::Error::Protocol("Missing 'national_id' (CPF) for signer user".into()))?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO signer (full_name, phone_number, contact_email, user_id, national_id)
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+            full_name,
+            phone_number,
+            &user.email,
+            user.user_id,
+            national_id
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
     tx.commit().await?;
 
     Ok(user)

@@ -1,0 +1,30 @@
+version: '3.9'
+
+services:
+  rustapp:
+    container_name: rustapp
+    image: michelly/e-signature-app:1.0.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DATABASE_URL: postgres://postgres:8080@db/e_signature
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+  db:
+    container_name: db
+    image: postgres:13
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 8080
+      POSTGRES_DB: e_signature
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

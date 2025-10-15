@@ -62,6 +62,10 @@ pub struct CreateUser {
     pub role: Role,
     pub legal_name: Option<String>,
     pub tax_id: Option<String>,
+    pub full_name: Option<String>,
+    pub phone_number: Option<String>,
+    pub is_verified: Option<i32>,
+    pub national_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

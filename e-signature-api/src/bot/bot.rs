@@ -82,10 +82,10 @@ async fn handle_command(
             };
 
             let user_jwt = match resp_json
-                .as_ref() 
+                .as_ref()
                 .and_then(|v| v.get("jwt").and_then(|j| j.as_str()))
             {
-                Some(jwt) => jwt.to_string(), 
+                Some(jwt) => jwt.to_string(),
                 None => {
                     bot.send_message(
                         chat_id,
