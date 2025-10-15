@@ -1,9 +1,9 @@
 CREATE TABLE user_account (
     user_id BIGSERIAL PRIMARY KEY,
-    email VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
     password_hash CHAR(60) NOT NULL,
-    is_verified INT NOT NULL DEFAULT 0,
     role INT NOT NULL DEFAULT 0,
+    face_embedding BYTEA NULL, 
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NULL,
     deleted_at TIMESTAMPTZ NULL

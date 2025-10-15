@@ -53,6 +53,8 @@ pub struct User {
     pub updated_at: Option<DateTime<Utc>>,
     #[serde(skip)]
     pub deleted_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing)] 
+    pub face_embedding: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Deserialize)]
