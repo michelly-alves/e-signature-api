@@ -1,4 +1,5 @@
 import 'package:e_signature_frontend/presentation/screens/signup_screen.dart';
+import 'package:e_signature_frontend/presentation/screens/facial_recognition_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../theme/app_colors.dart'; 
@@ -87,7 +88,11 @@ class _LoginScreenState extends State<LoginScreen> {
                           width: double.infinity,
                           child: ElevatedButton(
                             onPressed: () {
-                              // TODO: Adicionar lógica de login
+                              final userId = "1";
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => FacialRecognitionScreen(userId: userId)),
+                              );
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primaryDarkBlue,

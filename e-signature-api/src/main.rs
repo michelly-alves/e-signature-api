@@ -51,6 +51,7 @@ async fn main() -> std::io::Result<()> {
             .service(controllers::otp::verify_otp)
             .configure(controllers::users::config)
             .configure(controllers::telegram::config)
+            .configure(controllers::documents::config)
             .app_data(telegram_data.clone())
     })
     .bind(("127.0.0.1", 8080))?

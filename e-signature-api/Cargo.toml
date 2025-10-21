@@ -19,8 +19,7 @@ rand = "0.9.2"
 reqwest = { version = "0.12.23", features = ["json", "rustls-tls"] }
 otp = "0.2"
 teloxide = { version = "0.12", features = ["macros"] }
-face-detector = "0.4.0"
-image = "0.24.7"        
+image = "0.25.8"        
 base64 = "0.21.5"
 log = "0.4"
 env_logger = "0.10"

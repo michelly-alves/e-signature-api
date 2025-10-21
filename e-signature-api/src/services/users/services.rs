@@ -3,7 +3,6 @@ use bcrypt::{hash, DEFAULT_COST};
 use chrono::Utc;
 use sqlx::PgPool;
 use image::load_from_memory;
-use face_detector::{FaceDetector, LandmarkDetector, FaceEmbedder};
 use std::convert::TryInto;
 use base64::{Engine as _, engine::general_purpose};
 
@@ -162,89 +161,4 @@ pub async fn delete_user(pool: &PgPool, user_id: i64) -> Result<u64, sqlx::Error
     .await?;
 
     Ok(result.rows_affected())
-}
-
-pub async fn enroll_user_face(pool: &PgPool, user_id: i64, request: FaceEnrollmentRequest) -> Result<(), String> {
-    // 1. Decodifica a imagem Base64 recebida
-    let image_bytes = general_purpose::STANDARD.decode(&request.image_base64)
-        .map_err(|e| format!("Erro ao decodificar a imagem: {}", e))?;
-
-    // 2. Processa a imagem para extrair o embedding
-    let embedding = tokio::task::spawn_blocking(move || {
-        extract_embedding_from_image(image_bytes)
-    }).await.map_err(|e| format!("Erro no processamento da imagem: {}", e))?
-     .ok_or_else(|| "Nenhum rosto encontrado na imagem de cadastro.".to_string())?;
-
-    // 3. Salva o embedding no banco de dados
-    sqlx::query!(
-        "UPDATE user_account SET face_embedding = $1 WHERE user_id = $2",
-        &embedding,
-        user_id
-    )
-    .execute(pool)
-    .await
-    .map_err(|e| format!("Erro ao salvar embedding no banco: {}", e))?;
-
-    Ok(())
-}
-
-/// Verifica o rosto de um usuário contra o embedding armazenado
-pub async fn verify_user_face(pool: &PgPool, user_id: i64, request: FaceVerificationRequest) -> Result<bool, String> {
-    // 1. Busca o embedding de referência do banco
-    let record = sqlx::query!("SELECT face_embedding FROM user_account WHERE user_id = $1", user_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| format!("Erro ao buscar usuário: {}", e))?
-        .ok_or_else(|| "Usuário não encontrado.".to_string())?;
-
-    let reference_embedding_bytes = record.face_embedding
-        .ok_or_else(|| "Nenhum rosto cadastrado para este usuário.".to_string())?;
-    
-    // 2. Decodifica e processa a nova imagem
-    let image_bytes = general_purpose::STANDARD.decode(&request.image_base64)
-        .map_err(|e| format!("Erro ao decodificar a imagem: {}", e))?;
-
-    let new_embedding = tokio::task::spawn_blocking(move || {
-        extract_embedding_from_image(image_bytes)
-    }).await.map_err(|e| format!("Erro no processamento da imagem: {}", e))?
-     .ok_or_else(|| "Nenhum rosto encontrado na imagem de verificação.".to_string())?;
-
-    // 3. Compara os embeddings
-    let distance = face_detector::distance(&reference_embedding_bytes, &new_embedding);
-
-    // O valor de threshold 0.6 é um padrão comum. Valores menores indicam maior similaridade.
-    // Você pode ajustar este valor conforme necessário.
-    const SIMILARITY_THRESHOLD: f32 = 0.6; 
-
-    Ok(distance < SIMILARITY_THRESHOLD)
-}
-
-
-/// Função auxiliar para extrair o embedding de uma imagem
-/// Esta função é computacionalmente intensiva e deve ser rodada em um blocking thread.
-fn extract_embedding_from_image(image_bytes: Vec<u8>) -> Option<Vec<u8>> {
-    // Carrega os modelos. Em uma aplicação real, você faria isso apenas uma vez no início.
-    let face_detector = FaceDetector::new().ok()?;
-    let landmark_detector = LandmarkDetector::new().ok()?;
-    let face_embedder = FaceEmbedder::new().ok()?;
-
-    let image = load_from_memory(&image_bytes).ok()?.to_rgb8();
-    let (width, height) = image.dimensions();
-    
-    let faces = face_detector.detect(&image.into_raw(), width as usize, height as usize, 1);
-
-    // Usa apenas o primeiro rosto encontrado na imagem
-    if let Some(face) = faces.into_iter().next() {
-        let landmarks = landmark_detector.detect(&face);
-        let embedding: [f32; 128] = face_embedder.embed(&landmarks);
-        
-        // Converte o array de f32 para Vec<u8> para salvar no banco
-        let embedding_bytes: Vec<u8> = embedding
-            .iter()
-            .flat_map(|&f| f.to_ne_bytes().to_vec())
-            .collect();
-        return Some(embedding_bytes);
-    }
-    
-    None
 }

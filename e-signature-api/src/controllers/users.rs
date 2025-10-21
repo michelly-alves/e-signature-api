@@ -5,7 +5,7 @@ use crate::AppState;
 use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse, Responder};
 use serde::Deserialize;
 use serde_json;
-use crate::services::users::services::{FaceEnrollmentRequest, FaceVerificationRequest};
+//use crate::services::users::services::{FaceEnrollmentRequest, FaceVerificationRequest};
 
 
 #[derive(Deserialize)]
@@ -178,31 +178,7 @@ async fn get_current_user_handler(req: HttpRequest, state: web::Data<AppState>) 
     }
 }
 
-#[post("/users/{id}/facial-enrollment")]
-async fn enroll_face_handler(
-    state: web::Data<AppState>,
-    path: web::Path<i64>,
-    body: web::Json<FaceEnrollmentRequest>,
-) -> impl Responder {
-    let user_id = path.into_inner();
-    match user_service::enroll_user_face(&state.postgres_client, user_id, body.into_inner()).await {
-        Ok(_) => HttpResponse::Ok().json("Rosto cadastrado com sucesso."),
-        Err(e) => HttpResponse::BadRequest().json(e),
-    }
-}
-
-#[post("/users/{id}/facial-verify")]
-async fn verify_face_handler(
-    state: web::Data<AppState>,
-    path: web::Path<i64>,
-    body: web::Json<FaceVerificationRequest>,
-) -> impl Responder {
-    let user_id = path.into_inner();
-    match user_service::verify_user_face(&state.postgres_client, user_id, body.into_inner()).await {
-        Ok(is_match) => HttpResponse::Ok().json(serde_json::json!({ "match": is_match })),
-        Err(e) => HttpResponse::BadRequest().json(e),
-    }
-}
+/* */
 
 pub fn config(cfg: &mut web::ServiceConfig) {
     println!("Módulo users carregado!");
@@ -217,7 +193,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
             .service(delete_user_handler)
             .service(create_user_handler)
             .service(delete_user_handler)
-            .service(enroll_face_handler)
-            .service(verify_face_handler),
+            //.service(enroll_face_handler)
+            //.service(verify_face_handler),
     );
 }
