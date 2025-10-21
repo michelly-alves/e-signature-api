@@ -5,6 +5,7 @@ use dotenv::dotenv;
 use sqlx::postgres::PgPoolOptions;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use actix_cors::Cors;
 
 mod bot;
 mod controllers;
@@ -53,6 +54,13 @@ async fn main() -> std::io::Result<()> {
             .configure(controllers::telegram::config)
             .configure(controllers::documents::config)
             .app_data(telegram_data.clone())
+            .wrap(
+                Cors::default()
+                    .allow_any_origin() 
+                    .allow_any_method()
+                    .allow_any_header()
+                    .max_age(3600),
+            )
     })
     .bind(("127.0.0.1", 8080))?
     .run()

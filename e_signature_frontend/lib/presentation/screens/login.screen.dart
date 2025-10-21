@@ -1,8 +1,12 @@
-import 'package:e_signature_frontend/presentation/screens/signup_screen.dart';
+import 'package:e_signature_frontend/presentation/screens/home.screen.dart';
+import 'package:e_signature_frontend/presentation/screens/signup_screen.dart'; 
 import 'package:e_signature_frontend/presentation/screens/facial_recognition_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../theme/app_colors.dart'; 
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../../core/constants/api_constants.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,6 +17,42 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool isPessoaFisicaLogin = true;
+
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<String?> login(String email, String password) async {
+    final url = Uri.parse(ApiConstants.baseUrl + ApiConstants.signupEndpoint); 
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'password': password,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['token']; 
+      } else if (response.statusCode == 401) {
+        return null; 
+      } else {
+        throw Exception('Erro ao conectar com o servidor');
+      }
+    } catch (e) {
+      print('Erro no login: $e');
+      return null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 8),
-                        _buildTextField(),
+                        _buildTextField(controller: _emailController),
                         const SizedBox(height: 24),
                         Text(
                           'Senha',
@@ -82,22 +122,33 @@ class _LoginScreenState extends State<LoginScreen> {
                               fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 8),
-                        _buildTextField(isPassword: true),
+                        _buildTextField(controller: _passwordController, isPassword: true),
                         const SizedBox(height: 32),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: () {
-                              final userId = "1";
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => FacialRecognitionScreen(userId: userId)),
-                              );
+                            onPressed: () async {
+                              final email = _emailController.text;
+                              final password = _passwordController.text;
+
+                              final token = await login(email, password);
+
+                              if (token != null) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => HomeScreen(), 
+                                  ),
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Credenciais inválidas')),
+                                );
+                              }
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primaryDarkBlue,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 16),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(30),
                               ),
@@ -164,8 +215,9 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildTextField({bool isPassword = false}) {
+  Widget _buildTextField({bool isPassword = false, TextEditingController? controller}) {
     return TextFormField(
+      controller: controller,
       obscureText: isPassword,
       decoration: InputDecoration(
         filled: true,

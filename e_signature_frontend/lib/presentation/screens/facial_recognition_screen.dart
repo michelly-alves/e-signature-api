@@ -4,11 +4,11 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../data/repositories/auth.dart';
+import '../../data/repositories/auth_repository.dart';
 import '../../theme/app_colors.dart';
 
 class FacialRecognitionScreen extends StatefulWidget {
-  final String userId; // O ID do usuário para verificação
+  final String userId;
 
   const FacialRecognitionScreen({super.key, required this.userId});
 

@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-#[derive(Serialize, FromRow, Debug)]
+#[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct Document {
     pub document_id: i64,
     pub company_id: i64,
@@ -15,18 +15,18 @@ pub struct Document {
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Debug, Deserialize, Default)]
 pub struct CreateDocument {
     pub company_id: i64,
-    pub file_name: String,
-    pub file_path: String,
-    pub hash_sha256: String,
+    pub file_name: Option<String>,
+    pub file_path: Option<String>,
+    pub hash_sha256: Option<String>,
     pub status_id: i32,
-    pub signer_email: String,
-    pub signer_phone_number: String,
-    pub signer_national_id: String,
-    pub photo_id_url: String,
-    pub signer_full_name: String,
+    pub signer_full_name: Option<String>,
+    pub signer_phone_number: Option<String>,
+    pub signer_email: Option<String>,
+    pub signer_national_id: Option<String>,
+    pub photo_id_url: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]

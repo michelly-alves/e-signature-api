@@ -1,14 +1,6 @@
 use super::models::{CreateDocument, Document, UpdateDocument, CreateSigner, Signer};
 use sqlx::PgPool;
 
-pub struct LinkSignerToDocument {
-    pub document_id: i64,
-    pub signer_id: i64,
-    pub status_id: i32,
-    pub sign_order: Option<i32>,
-}
-
-
 pub async fn create_document_and_signer(
     pool: &PgPool,
     new_document: CreateDocument,

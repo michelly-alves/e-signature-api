@@ -1,6 +1,9 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../../core/constants/api_constants.dart';
 
 class AuthRepository {
   final String _baseUrl = "http://localhost:8080/api"; 
@@ -88,6 +91,21 @@ class AuthRepository {
       }
     } catch (e) {
       log('Error verifying face: $e');
+      return false;
+    }
+  }
+  Future<bool> createUser(Map<String, dynamic> userData) async {
+    final url = Uri.parse('${ApiConstants.baseUrl}${ApiConstants.createUser}');
+    final response = await http.post(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(userData),
+    );
+
+    if (response.statusCode == 201) {
+      return true;
+    } else {
+      print('Erro no cadastro: ${response.statusCode} - ${response.body}');
       return false;
     }
   }
