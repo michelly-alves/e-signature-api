@@ -1,10 +1,20 @@
+import 'package:e_signature_frontend/presentation/screens/document_list_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../theme/app_colors.dart';
-import 'create_document_screen.dart'; // 1. IMPORT DA NOVA TELA
+import 'create_document_screen.dart'; 
+import 'settings_screen.dart';
+import '../../providers/auth_provider.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
@@ -25,54 +35,41 @@ class HomeScreen extends StatelessWidget {
             icon: const Icon(Icons.account_circle_outlined,
                 color: AppColors.primaryText, size: 28),
             onPressed: () {
-              // TODO: Navegar para a tela de perfil
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+              );
             },
           ),
           const SizedBox(width: 10),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildWelcomeHeader("Michelly"),
-              const SizedBox(height: 32),
-              _buildQuickActions(context), 
-              const SizedBox(height: 40),
-              _buildRecentActivitySection(),
-            ],
-          ),
-        ),
+      body: Consumer<AuthProvider>(
+        builder: (context, auth, child) {
+          final token = auth.token;
+
+          return SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildWelcomeHeader("Michelly"),
+                  const SizedBox(height: 32),
+                  _buildQuickActions(context, token),
+                  const SizedBox(height: 40),
+                  _buildRecentActivitySection(),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildWelcomeHeader(String userName) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Bem-vinda de volta,',
-          style: GoogleFonts.poppins(
-            fontSize: 22,
-            color: AppColors.primaryText.withOpacity(0.7),
-          ),
-        ),
-        Text(
-          userName,
-          style: GoogleFonts.poppins(
-            fontSize: 36,
-            fontWeight: FontWeight.bold,
-            color: AppColors.primaryText,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildQuickActions(BuildContext context) {
+  Widget _buildQuickActions(BuildContext context, String? token) {
     final actions = [
       _buildActionCard(
         icon: Icons.add_to_drive_outlined,
@@ -87,16 +84,24 @@ class HomeScreen extends StatelessWidget {
       _buildActionCard(
         icon: Icons.folder_open_outlined,
         label: 'Meus Documentos',
-        onTap: () {},
+        onTap: () {
+          if (token != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => DocumentsListScreen(token: token),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Token ainda não disponível. Aguarde.')),
+            );
+          }
+        },
       ),
       _buildActionCard(
         icon: Icons.edit_outlined,
         label: 'Assinaturas Pendentes',
-        onTap: () {},
-      ),
-      _buildActionCard(
-        icon: Icons.settings_outlined,
-        label: 'Configurações',
         onTap: () {},
       ),
     ];
@@ -153,6 +158,29 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildWelcomeHeader(String userName) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Bem-vinda de volta,',
+          style: GoogleFonts.poppins(
+            fontSize: 22,
+            color: AppColors.primaryText.withOpacity(0.7),
+          ),
+        ),
+        Text(
+          userName,
+          style: GoogleFonts.poppins(
+            fontSize: 36,
+            fontWeight: FontWeight.bold,
+            color: AppColors.primaryText,
+          ),
+        ),
+      ],
     );
   }
 
@@ -236,4 +264,3 @@ class HomeScreen extends StatelessWidget {
     );
   }
 }
-

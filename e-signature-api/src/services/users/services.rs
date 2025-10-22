@@ -1,10 +1,12 @@
+use crate::services::documents::models::Signer;
 use crate::services::users::models::{CreateUser, Role, UpdateUser, User};
+use base64::{engine::general_purpose, Engine as _};
 use bcrypt::{hash, DEFAULT_COST};
 use chrono::Utc;
-use sqlx::PgPool;
 use image::load_from_memory;
+use sqlx::PgPool;
 use std::convert::TryInto;
-use base64::{Engine as _, engine::general_purpose};
+use std::fs;
 
 #[derive(serde::Deserialize, Debug)]
 pub struct FaceEnrollmentRequest {
@@ -62,10 +64,12 @@ pub async fn create_user(pool: &PgPool, new_user: CreateUser) -> Result<User, sq
         let full_name = new_user
             .full_name
             .ok_or_else(|| sqlx::Error::Protocol("Missing 'full_name' for Signer user".into()))?;
-        let phone_number = new_user.phone_number
-            .ok_or_else(|| sqlx::Error::Protocol("Missing 'phone_number' for signer user".into()))?;
-        let national_id = new_user.national_id
-            .ok_or_else(|| sqlx::Error::Protocol("Missing 'national_id' (CPF) for signer user".into()))?;
+        let phone_number = new_user.phone_number.ok_or_else(|| {
+            sqlx::Error::Protocol("Missing 'phone_number' for signer user".into())
+        })?;
+        let national_id = new_user.national_id.ok_or_else(|| {
+            sqlx::Error::Protocol("Missing 'national_id' (CPF) for signer user".into())
+        })?;
 
         sqlx::query!(
             r#"
@@ -117,6 +121,25 @@ pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>,
     Ok(user)
 }
 
+pub async fn get_signer_by_id(
+    pool: &PgPool,
+    signer_id: i64,
+) -> Result<Option<Signer>, sqlx::Error> {
+    let signer = sqlx::query_as::<_, Signer>(
+        r#"
+    SELECT photo_id_url, user_id, signer_id, full_name, national_id, phone_number,
+           public_key, contact_email, created_at, updated_at, deleted_at
+    FROM signer
+    WHERE signer_id = $1 AND deleted_at IS NULL
+    "#,
+    )
+    .bind(signer_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(signer)
+}
+
 pub async fn update_user(
     pool: &PgPool,
     user_id: i64,
@@ -161,4 +184,44 @@ pub async fn delete_user(pool: &PgPool, user_id: i64) -> Result<u64, sqlx::Error
     .await?;
 
     Ok(result.rows_affected())
+}
+
+pub async fn verify_signer_face(
+    pool: &PgPool,
+    national_id: &str,
+    live_image_base64: &str,
+) -> Result<Option<bool>, sqlx::Error> {
+    let signer_record = sqlx::query!(
+        r#"
+        SELECT photo_id_url
+        FROM signer
+        WHERE national_id = $1 AND deleted_at IS NULL
+        "#,
+        national_id
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    let record = match signer_record {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+
+    let reference_photo_path = match record.photo_id_url {
+        Some(path) => path,
+        None => return Err(sqlx::Error::Protocol("Signatário encontrado, mas sem foto de referência cadastrada.".into())),
+    };
+
+    let reference_image_bytes = fs::read(&reference_photo_path)
+        .map_err(|e| sqlx::Error::Protocol(format!("Falha ao ler a foto de referência: {}", e).into()))?;
+
+    let live_image_bytes = general_purpose::STANDARD.decode(live_image_base64)
+        .map_err(|e| sqlx::Error::Protocol(format!("Imagem base64 inválida: {}", e).into()))?;
+
+        //TO DO/; Integrar com serviço real de reconhecimento facial aqui       
+    
+    let match_result = !reference_image_bytes.is_empty() && !live_image_bytes.is_empty();
+    println!("SIMULAÇÃO: Comparando faces. Resultado: {}", match_result);
+
+    Ok(Some(match_result))
 }

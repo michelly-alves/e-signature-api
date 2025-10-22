@@ -1,11 +1,11 @@
 use crate::services::telegram::models::TelegramLink;
+use actix_cors::Cors;
 use actix_web::middleware::Logger;
 use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
 use dotenv::dotenv;
 use sqlx::postgres::PgPoolOptions;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use actix_cors::Cors;
 
 mod bot;
 mod controllers;
@@ -56,7 +56,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(telegram_data.clone())
             .wrap(
                 Cors::default()
-                    .allow_any_origin() 
+                    .allow_any_origin()
                     .allow_any_method()
                     .allow_any_header()
                     .max_age(3600),

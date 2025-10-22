@@ -1,4 +1,4 @@
-use super::models::{CreateDocument, Document, UpdateDocument, CreateSigner, Signer};
+use super::models::{CreateDocument, CreateSigner, Document, Signer, UpdateDocument};
 use sqlx::PgPool;
 
 pub async fn create_document_and_signer(
@@ -60,7 +60,7 @@ pub async fn create_document_and_signer(
         "#,
         document.document_id,
         signer_id,
-        1 
+        1
     )
     .execute(&mut *tx)
     .await?;
@@ -69,7 +69,6 @@ pub async fn create_document_and_signer(
 
     Ok(document)
 }
-
 
 pub async fn get_all_documents(pool: &PgPool) -> Result<Vec<Document>, sqlx::Error> {
     let documents = sqlx::query_as!(
@@ -86,7 +85,10 @@ pub async fn get_all_documents(pool: &PgPool) -> Result<Vec<Document>, sqlx::Err
     Ok(documents)
 }
 
-pub async fn get_document_by_id(pool: &PgPool, document_id: i64) -> Result<Option<Document>, sqlx::Error> {
+pub async fn get_document_by_id(
+    pool: &PgPool,
+    document_id: i64,
+) -> Result<Option<Document>, sqlx::Error> {
     let document = sqlx::query_as!(
         Document,
         r#"
@@ -146,7 +148,6 @@ pub async fn delete_document(pool: &PgPool, document_id: i64) -> Result<u64, sql
 
     Ok(result.rows_affected())
 }
-
 
 /*pub async fn get_signers_for_document(pool: &PgPool, document_id: i64) -> Result<Vec<Signer>, sqlx::Error> {
     let signers = sqlx::query_as!(

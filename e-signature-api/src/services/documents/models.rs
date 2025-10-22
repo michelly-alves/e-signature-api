@@ -37,19 +37,18 @@ pub struct UpdateDocument {
 
 #[derive(Serialize, FromRow, Debug)]
 pub struct Signer {
-pub signer_id: i64,
+    pub signer_id: i64,
     pub full_name: String,
     pub national_id: String,
     pub phone_number: String,
     pub contact_email: String,
-    pub public_key: String,    
+    pub public_key: Option<String>,
     pub created_at: DateTime<Utc>,
-    pub updated_at: Option<DateTime<Utc>>,  
-    pub deleted_at: Option<DateTime<Utc>>, 
-    pub user_id: i64,
-    pub photo_id_url: Option<String>, 
+    pub updated_at: Option<DateTime<Utc>>,
+    pub deleted_at: Option<DateTime<Utc>>,
+     pub user_id: Option<i64>,
+    pub photo_id_url: Option<String>,
 }
-
 
 #[derive(Deserialize, Debug)]
 pub struct CreateSigner {

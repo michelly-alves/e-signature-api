@@ -1,12 +1,11 @@
 import 'package:e_signature_frontend/presentation/screens/home.screen.dart';
-import 'package:e_signature_frontend/presentation/screens/signup_screen.dart'; 
-import 'package:e_signature_frontend/presentation/screens/facial_recognition_screen.dart';
+import 'package:e_signature_frontend/presentation/screens/signup_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../theme/app_colors.dart'; 
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import '../../core/constants/api_constants.dart';
+import '../../data/repositories/auth_repository.dart'; 
+import '../../theme/app_colors.dart';
+import '../../providers/auth_provider.dart';
+import 'package:provider/provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,8 +15,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  bool isPessoaFisicaLogin = true;
 
+  final AuthRepository _authRepository = AuthRepository();
+
+  bool isPessoaFisicaLogin = true;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
@@ -28,38 +29,12 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<String?> login(String email, String password) async {
-    final url = Uri.parse(ApiConstants.baseUrl + ApiConstants.signupEndpoint); 
-    try {
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': email,
-          'password': password,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['token']; 
-      } else if (response.statusCode == 401) {
-        return null; 
-      } else {
-        throw Exception('Erro ao conectar com o servidor');
-      }
-    } catch (e) {
-      print('Erro no login: $e');
-      return null;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
         decoration: isPessoaFisicaLogin
-            ? const BoxDecoration( 
+            ? const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -82,7 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 if (MediaQuery.of(context).size.width > 900)
                   Expanded(
                     child: Image.asset(
-                      'assets/images/garota_notebook.png', 
+                      'assets/images/garota_notebook.png',
                       height: 500,
                     ),
                   ),
@@ -122,7 +97,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 8),
-                        _buildTextField(controller: _passwordController, isPassword: true),
+                        _buildTextField(
+                            controller: _passwordController, isPassword: true),
                         const SizedBox(height: 32),
                         SizedBox(
                           width: double.infinity,
@@ -130,25 +106,32 @@ class _LoginScreenState extends State<LoginScreen> {
                             onPressed: () async {
                               final email = _emailController.text;
                               final password = _passwordController.text;
+                              
+                              final token = await _authRepository.signIn(email: email, password: password);
+                              final navigator = Navigator.of(context);
+                              final messenger = ScaffoldMessenger.of(context);
 
-                              final token = await login(email, password);
+                              final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                              final success = await authProvider.login(email, password);
 
-                              if (token != null) {
-                                Navigator.push(
-                                  context,
+                              if (token != null ) {
+                                navigator.pushReplacement( 
                                   MaterialPageRoute(
-                                    builder: (context) => HomeScreen(), 
+                                    builder: (context) => const HomeScreen(),
                                   ),
                                 );
                               } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Credenciais inválidas')),
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                      backgroundColor: Colors.redAccent,
+                                      content: Text('Credenciais inválidas. Tente novamente.')),
                                 );
                               }
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primaryDarkBlue,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(30),
                               ),
@@ -215,7 +198,8 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildTextField({bool isPassword = false, TextEditingController? controller}) {
+  Widget _buildTextField(
+      {bool isPassword = false, TextEditingController? controller}) {
     return TextFormField(
       controller: controller,
       obscureText: isPassword,
@@ -267,7 +251,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               if (!isPessoaFisicaLogin)
                 Container(
-                  width: 150, 
+                  width: 150,
                   height: 2,
                   color: AppColors.primaryPink,
                   margin: const EdgeInsets.only(top: 2),
@@ -275,10 +259,10 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 8), 
+        const SizedBox(height: 8),
         GestureDetector(
           onTap: () {
-            if (!isPessoaFisicaLogin) { 
+            if (!isPessoaFisicaLogin) {
               setState(() {
                 isPessoaFisicaLogin = true;
               });

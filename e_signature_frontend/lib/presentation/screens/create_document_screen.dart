@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:typed_data';
 import '../../theme/app_colors.dart';
 import '../../data/repositories/document_repository.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart'; 
 
 class CreateDocumentScreen extends StatefulWidget {
   const CreateDocumentScreen({super.key});
@@ -16,18 +17,16 @@ class _CreateDocumentScreenState extends State<CreateDocumentScreen> {
   final _formKey = GlobalKey<FormState>();
   final _documentRepository = DocumentRepository();
 
-  final _titleController = TextEditingController();
-
   final _signerFullNameController = TextEditingController();
   final _signerNationalIdController = TextEditingController();
   final _signerPhoneNumberController = TextEditingController();
   final _signerEmailController = TextEditingController();
 
-  PlatformFile? _pickedFile;
+  PlatformFile? _pickedDocumentFile;
+  PlatformFile? _pickedPhotoIdFile; 
 
   @override
   void dispose() {
-    _titleController.dispose();
     _signerFullNameController.dispose();
     _signerNationalIdController.dispose();
     _signerPhoneNumberController.dispose();
@@ -35,67 +34,71 @@ class _CreateDocumentScreenState extends State<CreateDocumentScreen> {
     super.dispose();
   }
 
-  Future<void> _pickDocument() async {
+  Future<void> _pickFile(bool isDocument) async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf'],
-      withData: true, 
+      type: isDocument ? FileType.custom : FileType.image,
+      allowedExtensions: isDocument ? ['pdf'] : null,
+      withData: true,
     );
 
     if (result != null) {
       setState(() {
-        _pickedFile = result.files.first;
+        if (isDocument) {
+          _pickedDocumentFile = result.files.first;
+        } else {
+          _pickedPhotoIdFile = result.files.first;
+        }
       });
     }
   }
 
-  Future<void> _createDocument() async {
-    if (_pickedFile == null || _pickedFile!.bytes == null) {
+Future<void> _createDocument() async {
+    if (_pickedDocumentFile == null || _pickedPhotoIdFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         backgroundColor: Colors.redAccent,
-        content: Text('Por favor, selecione um arquivo PDF.'),
+        content: Text('Por favor, anexe o PDF e a foto de identificação.'),
       ));
       return;
     }
 
-    if (!_formKey.currentState!.validate()) {
+    if (!_formKey.currentState!.validate()) return;
+    
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final token = authProvider.token;
+
+    if (token == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        backgroundColor: Colors.redAccent,
+        content: Text('Erro de autenticação. Faça o login novamente.'),
+      ));
       return;
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
+    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
 
-    final success = await _documentRepository.createDocumentWithFile(
-      companyId: 1,
+    final success = await _documentRepository.createDocumentWithFiles(
+      companyId: 7,
       statusId: 1,
-
-      fileName: _pickedFile!.name,
-      fileBytes: _pickedFile!.bytes!,
+      documentFileName: _pickedDocumentFile!.name,
+      documentFileBytes: _pickedDocumentFile!.bytes!,
       signerFullName: _signerFullNameController.text,
       signerPhoneNumber: _signerPhoneNumberController.text,
       signerEmail: _signerEmailController.text,
       signerNationalId: _signerNationalIdController.text,
+      photoIdFileName: _pickedPhotoIdFile!.name,
+      photoIdFileBytes: _pickedPhotoIdFile!.bytes!,
     );
     
     final navigator = Navigator.of(context);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     
-    navigator.pop(); 
+    navigator.pop();
 
     if (success) {
-      scaffoldMessenger.showSnackBar(const SnackBar(
-        backgroundColor: Colors.green,
-        content: Text('Documento enviado com sucesso!'),
-      ));
-      navigator.pop(); 
+      scaffoldMessenger.showSnackBar(const SnackBar(backgroundColor: Colors.green, content: Text('Documento enviado com sucesso!')));
+      navigator.pop();
     } else {
-      scaffoldMessenger.showSnackBar(const SnackBar(
-        backgroundColor: Colors.redAccent,
-        content: Text('Erro ao enviar o documento.'),
-      ));
+      scaffoldMessenger.showSnackBar(const SnackBar(backgroundColor: Colors.redAccent, content: Text('Erro ao enviar o documento.')));
     }
   }
 
@@ -106,69 +109,70 @@ class _CreateDocumentScreenState extends State<CreateDocumentScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: AppColors.primaryText),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(
-          'Criar Novo Documento',
-          style: GoogleFonts.poppins(
-            color: AppColors.primaryText,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios, color: AppColors.primaryText), onPressed: () => Navigator.of(context).pop()),
+        title: Text('Criar Novo Documento', style: GoogleFonts.poppins(color: AppColors.primaryText, fontWeight: FontWeight.bold)),
       ),
       body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildSectionTitle('1. Anexar o PDF'),
-                const SizedBox(height: 16),
-                _buildFileUploadButton(),
-                if (_pickedFile != null) ...[
-                  const SizedBox(height: 16),
-                  _buildFileInfo(),
-                ],
-                const SizedBox(height: 32),
-                _buildSectionTitle('2. Adicionar Signatário Principal'),
-                const SizedBox(height: 16),
-                _buildTextField(controller: _signerFullNameController, label: 'Nome Completo'),
-                const SizedBox(height: 16),
-                _buildTextField(controller: _signerNationalIdController, label: 'CPF / CNPJ'),
-                const SizedBox(height: 16),
-                _buildTextField(controller: _signerPhoneNumberController, label: 'Telefone'),
-                const SizedBox(height: 16),
-                _buildTextField(controller: _signerEmailController, label: 'E-mail do Signatário', keyboardType: TextInputType.emailAddress),
-                const SizedBox(height: 40),
-                _buildSubmitButton(),
-              ],
-            ),
+        padding: const EdgeInsets.all(24.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildSectionTitle('1. Documento para Assinatura'),
+              const SizedBox(height: 16),
+              _buildFileUploadWidget(isDocument: true),
+              
+              const SizedBox(height: 32),
+              
+              _buildSectionTitle('2. Dados do Signatário'),
+              const SizedBox(height: 16),
+              _buildTextField(controller: _signerFullNameController, label: 'Nome Completo'),
+              const SizedBox(height: 16),
+              _buildTextField(controller: _signerNationalIdController, label: 'CPF / CNPJ'),
+              const SizedBox(height: 16),
+              _buildTextField(controller: _signerPhoneNumberController, label: 'Telefone'),
+              const SizedBox(height: 16),
+              _buildTextField(controller: _signerEmailController, label: 'E-mail do Signatário', keyboardType: TextInputType.emailAddress),
+              
+              const SizedBox(height: 32),
+
+              _buildSectionTitle('3. Foto de Identificação (ID)'),
+              const SizedBox(height: 16),
+              _buildFileUploadWidget(isDocument: false),
+
+              const SizedBox(height: 40),
+              _buildSubmitButton(),
+            ],
           ),
         ),
       ),
     );
   }
-  
- 
-  Widget _buildFileUploadButton() {
-    return OutlinedButton.icon(
-      icon: const Icon(Icons.upload_file_outlined),
-      label: Text(_pickedFile == null ? 'Selecionar Arquivo PDF' : 'Trocar Arquivo'),
-      onPressed: _pickDocument,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: AppColors.primaryButton,
-        minimumSize: const Size(double.infinity, 50),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        side: const BorderSide(color: AppColors.primaryButton),
-      ),
-    );
+
+  Widget _buildFileUploadWidget({required bool isDocument}) {
+    final file = isDocument ? _pickedDocumentFile : _pickedPhotoIdFile;
+    final title = isDocument ? 'Selecionar Arquivo PDF' : 'Selecionar Foto (ID)';
+    final changeTitle = isDocument ? 'Trocar PDF' : 'Trocar Foto';
+
+    if (file != null) {
+      return _buildFileInfo(file, isDocument);
+    } else {
+      return OutlinedButton.icon(
+        icon: const Icon(Icons.upload_file_outlined),
+        label: Text(title),
+        onPressed: () => _pickFile(isDocument),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primaryButton,
+          minimumSize: const Size(double.infinity, 50),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          side: const BorderSide(color: AppColors.primaryButton),
+        ),
+      );
+    }
   }
   
-  Widget _buildFileInfo() {
+  Widget _buildFileInfo(PlatformFile file, bool isDocument) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -178,98 +182,23 @@ class _CreateDocumentScreenState extends State<CreateDocumentScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.picture_as_pdf, color: Colors.red),
+          Icon(isDocument ? Icons.picture_as_pdf : Icons.image, color: isDocument ? Colors.red : AppColors.primaryButton),
           const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              _pickedFile!.name,
-              style: GoogleFonts.poppins(),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+          Expanded(child: Text(file.name, style: GoogleFonts.poppins(), overflow: TextOverflow.ellipsis)),
           IconButton(
             icon: const Icon(Icons.close, size: 20),
-            onPressed: () => setState(() => _pickedFile = null),
+            onPressed: () => setState(() {
+              if (isDocument) _pickedDocumentFile = null;
+              else _pickedPhotoIdFile = null;
+            }),
           )
         ],
       ),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: GoogleFonts.poppins(
-        fontSize: 22,
-        fontWeight: FontWeight.bold,
-        color: AppColors.primaryText,
-      ),
-    );
-  }
-  
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    int maxLines = 1,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return TextFormField(
-      controller: controller,
-      maxLines: maxLines,
-      keyboardType: keyboardType,
-      style: GoogleFonts.poppins(color: AppColors.primaryText),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: GoogleFonts.poppins(color: AppColors.primaryText.withOpacity(0.7)),
-        filled: true,
-        fillColor: AppColors.textFieldFill,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.textFieldBorder),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.textFieldBorder),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.primaryButton, width: 2),
-        ),
-      ),
-      validator: (value) {
-        if (value == null || value.isEmpty) {
-          return 'Este campo é obrigatório.';
-        }
-        if (label.contains('E-mail') && !value.contains('@')) {
-          return 'Por favor, insira um e-mail válido.';
-        }
-        return null;
-      },
-    );
-  }
-
-  Widget _buildSubmitButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        icon: const Icon(Icons.send_outlined, color: Colors.white),
-        label: Text(
-          'Criar e Enviar',
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
-        onPressed: _createDocument,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primaryButton,
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildSectionTitle(String title) { /* ... */ return Text(title, style: GoogleFonts.poppins(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.primaryText));}
+  Widget _buildTextField({required TextEditingController controller, required String label, TextInputType keyboardType = TextInputType.text}) { /* ... */ return TextFormField(controller: controller, keyboardType: keyboardType, decoration: InputDecoration(labelText: label), validator: (v) => (v == null || v.isEmpty) ? 'Campo obrigatório' : null); }
+  Widget _buildSubmitButton() { /* ... */ return SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: _createDocument, icon: const Icon(Icons.send_outlined), label: const Text('Criar e Enviar'))); }
 }
+
