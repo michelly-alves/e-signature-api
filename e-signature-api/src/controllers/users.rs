@@ -120,16 +120,21 @@ pub async fn verify_signer_face_handler(
     body: web::Json<FaceVerificationPayload>,
 ) -> impl Responder {
     let national_id = path.into_inner();
-    match user_service::verify_signer_face(&state.postgres_client, &national_id, &body.live_image_base64).await {
+    match user_service::verify_signer_face(
+        &state.postgres_client,
+        &national_id,
+        &body.live_image_base64,
+    )
+    .await
+    {
         Ok(Some(match_result)) => {
-             HttpResponse::Ok().json(serde_json::json!({ "match": match_result }))
-        },
+            HttpResponse::Ok().json(serde_json::json!({ "match": match_result }))
+        }
         Ok(None) => {
             HttpResponse::NotFound().json(serde_json::json!({ "error": "Signer not found" }))
-        },
-        Err(e) => {
-            HttpResponse::InternalServerError().json(serde_json::json!({ "error": format!("Verification failed: {}", e) }))
         }
+        Err(e) => HttpResponse::InternalServerError()
+            .json(serde_json::json!({ "error": format!("Verification failed: {}", e) })),
     }
 }
 
@@ -237,7 +242,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
             .service(delete_user_handler)
             .service(get_signer_by_id_handler)
             .service(verify_signer_face_handler),
-            //,(enroll_face_handler)
-            //.service(verify_face_handler),
+        //,(enroll_face_handler)
+        //.service(verify_face_handler),
     );
 }

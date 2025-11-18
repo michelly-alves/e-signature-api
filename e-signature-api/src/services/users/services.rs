@@ -3,20 +3,12 @@ use crate::services::users::models::{CreateUser, Role, UpdateUser, User};
 use base64::{engine::general_purpose, Engine as _};
 use bcrypt::{hash, DEFAULT_COST};
 use chrono::Utc;
-use image::load_from_memory;
+use serde_json::json;
 use sqlx::PgPool;
-use std::convert::TryInto;
 use std::fs;
-
-#[derive(serde::Deserialize, Debug)]
-pub struct FaceEnrollmentRequest {
-    pub image_base64: String,
-}
-
-#[derive(serde::Deserialize, Debug)]
-pub struct FaceVerificationRequest {
-    pub image_base64: String,
-}
+use std::io::Write;
+use std::process::Command;
+use std::process::Stdio;
 
 pub async fn create_user(pool: &PgPool, new_user: CreateUser) -> Result<User, sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -191,6 +183,7 @@ pub async fn verify_signer_face(
     national_id: &str,
     live_image_base64: &str,
 ) -> Result<Option<bool>, sqlx::Error> {
+    // 1. Busca o signatário
     let signer_record = sqlx::query!(
         r#"
         SELECT photo_id_url
@@ -209,19 +202,62 @@ pub async fn verify_signer_face(
 
     let reference_photo_path = match record.photo_id_url {
         Some(path) => path,
-        None => return Err(sqlx::Error::Protocol("Signatário encontrado, mas sem foto de referência cadastrada.".into())),
+        None => {
+            return Err(sqlx::Error::Protocol(
+                "Signatário sem foto de referência.".into(),
+            ))
+        }
     };
 
+    // 2. Lê a imagem de referência e converte para base64
     let reference_image_bytes = fs::read(&reference_photo_path)
-        .map_err(|e| sqlx::Error::Protocol(format!("Falha ao ler a foto de referência: {}", e).into()))?;
+        .map_err(|e| sqlx::Error::Protocol(format!("Erro ao ler a foto de referência: {}", e)))?;
+    let reference_image_base64 = general_purpose::STANDARD.encode(&reference_image_bytes);
 
-    let live_image_bytes = general_purpose::STANDARD.decode(live_image_base64)
-        .map_err(|e| sqlx::Error::Protocol(format!("Imagem base64 inválida: {}", e).into()))?;
+    // 3. Chama script Python
+    let mut child = Command::new("python")
+        .arg("./scripts/compare_faces.py")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| sqlx::Error::Protocol(format!("Erro ao iniciar Python: {}", e)))?;
 
-        //TO DO/; Integrar com serviço real de reconhecimento facial aqui       
-    
-    let match_result = !reference_image_bytes.is_empty() && !live_image_bytes.is_empty();
-    println!("SIMULAÇÃO: Comparando faces. Resultado: {}", match_result);
+    // 4. Envia JSON para o Python via stdin
+    let input_json = json!({
+        "ref_image_base64": reference_image_base64,
+        "live_image_base64": live_image_base64
+    });
+
+    let stdin = child.stdin.as_mut().ok_or_else(|| {
+        sqlx::Error::Protocol("Não foi possível abrir stdin do processo Python.".into())
+    })?;
+    stdin
+        .write_all(input_json.to_string().as_bytes())
+        .map_err(|e| sqlx::Error::Protocol(format!("Erro ao escrever stdin: {}", e)))?;
+
+    // 5. Recebe resultado do Python
+    let output = child
+        .wait_with_output()
+        .map_err(|e| sqlx::Error::Protocol(format!("Erro ao executar Python: {}", e)))?;
+
+    if !output.status.success() {
+        return Err(sqlx::Error::Protocol(format!(
+            "Python retornou erro: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+
+    let output_json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| sqlx::Error::Protocol(format!("Erro ao parsear JSON do Python: {}", e)))?;
+
+    let match_result = output_json
+        .get("match")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    println!("Base64 reference length: {}", reference_image_base64.len());
+    println!("Base64 live image length: {}", live_image_base64.len());
+    println!("Resultado da comparação: {}", match_result);
 
     Ok(Some(match_result))
 }

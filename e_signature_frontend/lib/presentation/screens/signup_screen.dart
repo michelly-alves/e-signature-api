@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http; 
+import 'dart:convert'; 
+
 import '../../data/repositories/auth_repository.dart';
 import '../../theme/app_colors.dart';
+import 'otp_verification_screen.dart'; 
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -11,18 +15,22 @@ class SignUpScreen extends StatefulWidget {
 }
 
 class _SignUpScreenState extends State<SignUpScreen> {
-  bool isPessoaFisica = false; 
+  bool isPessoaFisica = true; 
+  bool _isLoading = false; 
+
   final _authRepository = AuthRepository();
 
   final nameController = TextEditingController();
   final cpfController = TextEditingController();
   final birthController = TextEditingController();
   final emailController = TextEditingController();
+  final phoneController = TextEditingController(); 
   final passwordController = TextEditingController();
 
   final companyNameController = TextEditingController();
   final cnpjController = TextEditingController();
   final companyEmailController = TextEditingController();
+  final companyPhoneController = TextEditingController(); 
   final companyPasswordController = TextEditingController();
 
   @override
@@ -31,10 +39,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
     cpfController.dispose();
     birthController.dispose();
     emailController.dispose();
+    phoneController.dispose();
     passwordController.dispose();
     companyNameController.dispose();
     cnpjController.dispose();
     companyEmailController.dispose();
+    companyPhoneController.dispose();
     companyPasswordController.dispose();
     super.dispose();
   }
@@ -44,44 +54,78 @@ class _SignUpScreenState extends State<SignUpScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             backgroundColor: Colors.redAccent,
-            content: Text('Por favor, preencha todos os campos.')),
+            content: Text('Por favor, preencha todos os campos obrigatórios.')),
       );
       return;
     }
 
+    setState(() => _isLoading = true);
+
+    final activeEmail = isPessoaFisica ? emailController.text : companyEmailController.text;
+    final activePhone = isPessoaFisica ? phoneController.text : companyPhoneController.text;
+
     final userData = isPessoaFisica
         ? {
-            "email": emailController.text,
+            "email": activeEmail,
             "password": passwordController.text,
-            "role": "Signer", 
+            "role": "Signer",
             "full_name": nameController.text,
             "national_id": cpfController.text,
-            "phone_number": "85999999999" 
+            "phone_number": activePhone
           }
         : {
-            "email": companyEmailController.text,
+            "email": activeEmail,
             "password": companyPasswordController.text,
-            "role": "Company", 
+            "role": "Company",
             "legal_name": companyNameController.text,
             "tax_id": cnpjController.text,
+            "phone_number": activePhone
           };
 
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
-    final success = await _authRepository.createUser(userData);
+    try {
+      final success = await _authRepository.createUser(userData);
 
-    if (success) {
+      if (success) {
+        final otpResponse = await http.post(
+          Uri.parse("http://localhost:8080/otp/generate"), 
+          headers: {"Content-Type": "application/json"},
+          body: json.encode({
+            "email": activeEmail,
+            "phone_number": activePhone,
+          }),
+        );
+
+        if (otpResponse.statusCode == 200) {
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => OtpVerificationScreen(email: activeEmail),
+              ),
+            );
+          }
+        } else {
+          scaffoldMessenger.showSnackBar(SnackBar(
+              backgroundColor: Colors.orange,
+              content: Text('Conta criada, mas erro ao enviar OTP: ${otpResponse.body}')));
+        }
+      } else {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+              backgroundColor: Colors.redAccent,
+              content: Text('Erro ao cadastrar usuário. Verifique os dados ou tente outro e-mail.')),
+        );
+      }
+    } catch (e) {
       scaffoldMessenger.showSnackBar(
-        const SnackBar(
-            backgroundColor: Colors.green,
-            content: Text('Cadastro realizado com sucesso!')),
-      );
-    } else {
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
+        SnackBar(
             backgroundColor: Colors.redAccent,
-            content: Text('Erro ao cadastrar usuário. Verifique os dados.')),
+            content: Text('Erro de conexão: $e')),
       );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -90,13 +134,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return nameController.text.isEmpty ||
           cpfController.text.isEmpty ||
           emailController.text.isEmpty ||
+          phoneController.text.isEmpty ||
           passwordController.text.isEmpty;
     } else {
       return companyNameController.text.isEmpty ||
           cnpjController.text.isEmpty ||
           companyEmailController.text.isEmpty ||
+          companyPhoneController.text.isEmpty ||
           companyPasswordController.text.isEmpty;
-              }
+    }
   }
 
   @override
@@ -106,7 +152,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       body: Center(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            if (constraints.maxWidth > 500) {
+            if (constraints.maxWidth > 900) { 
               return _buildWideLayout();
             } else {
               return _buildNarrowLayout();
@@ -122,7 +168,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       children: [
         Expanded(
           flex: 5,
-          child: _buildFormSide(),
+          child: SingleChildScrollView(child: _buildFormSide()),
         ),
         Expanded(
           flex: 4,
@@ -146,7 +192,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   Widget _buildFormSide() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 40.0, vertical: 20.0),
+      padding: const EdgeInsets.symmetric(horizontal: 40.0, vertical: 40.0),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -159,20 +205,33 @@ class _SignUpScreenState extends State<SignUpScreen> {
               color: AppColors.primaryText,
             ),
           ),
-          const SizedBox(height: 24),
-          _buildProfileTypeSwitcher(),
+          const SizedBox(height: 8),
+          Text(
+            'Crie sua conta para começar a assinar documentos.',
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              color: AppColors.primaryText.withOpacity(0.6),
+            ),
+          ),
           const SizedBox(height: 32),
+          
+          _buildProfileTypeSwitcher(),
+          
+          const SizedBox(height: 32),
+          
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
             child: isPessoaFisica
                 ? _buildPessoaFisicaForm()
                 : _buildEmpresaForm(),
           ),
+          
           const SizedBox(height: 32),
+          
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _register,
+              onPressed: _isLoading ? null : _register,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primaryButton,
                 padding: const EdgeInsets.symmetric(vertical: 20),
@@ -180,14 +239,24 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 foregroundColor: Colors.white,
+                disabledBackgroundColor: AppColors.primaryButton.withOpacity(0.6),
               ),
-              child: Text(
-                'Cadastrar',
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 24,
+                      width: 24,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Text(
+                      'Cadastrar',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
             ),
           ),
         ],
@@ -214,6 +283,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
         const SizedBox(height: 16),
         _buildLabeledTextField(controller: cpfController, label: 'CPF'),
         const SizedBox(height: 16),
+        _buildLabeledTextField(
+          controller: phoneController, 
+          label: 'Celular (com DDD)',
+          hintText: '+55 11 99999-9999'
+        ),
+        const SizedBox(height: 16),
         _buildLabeledTextField(controller: emailController, label: 'E-mail'),
         const SizedBox(height: 16),
         _buildLabeledTextField(controller: passwordController, label: 'Senha', isPassword: true),
@@ -229,10 +304,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
         const SizedBox(height: 16),
         _buildLabeledTextField(controller: cnpjController, label: 'CNPJ'),
         const SizedBox(height: 16),
+        _buildLabeledTextField(
+          controller: companyPhoneController, 
+          label: 'Celular Responsável (com DDD)',
+          hintText: '+55 11 99999-9999'
+        ),
+        const SizedBox(height: 16),
         _buildLabeledTextField(controller: companyEmailController, label: 'E-mail da Empresa'),
         const SizedBox(height: 16),
         _buildLabeledTextField(controller: companyPasswordController, label: 'Senha', isPassword: true),
-        const SizedBox(height: 16),
       ],
     );
   }
@@ -295,6 +375,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   Widget _buildLabeledTextField({
     required TextEditingController controller,
     required String label,
+    String? hintText,
     bool isPassword = false,
   }) {
     return Column(
@@ -312,6 +393,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
           controller: controller,
           obscureText: isPassword,
           decoration: InputDecoration(
+            hintText: hintText,
+            hintStyle: TextStyle(color: Colors.grey[400]),
             filled: true,
             fillColor: AppColors.textFieldFill,
             border: OutlineInputBorder(

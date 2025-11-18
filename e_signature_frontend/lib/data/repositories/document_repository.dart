@@ -38,57 +38,61 @@ class DocumentRepository {
   }
 
   Future<bool> createDocumentWithFiles({
-    required int companyId,
-    required int statusId,
-    required String documentFileName,
-    required Uint8List documentFileBytes,
-    required String signerFullName,
-    required String signerPhoneNumber,
-    required String signerEmail,
-    required String signerNationalId,
-    required String photoIdFileName,
-    required Uint8List photoIdFileBytes,
-  }) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('jwt_token');
+  required int companyId,
+  required int statusId,
+  required String documentFileName,
+  required Uint8List documentFileBytes,
+  required String signerFullName,
+  required String signerPhoneNumber,
+  required String signerEmail,
+  required String signerNationalId,
+  required String photoIdFileName,
+  required Uint8List photoIdFileBytes,
+}) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('jwt_token');
 
-      if (token == null) {
-        throw Exception('Token JWT não encontrado.');
-      }
+    if (token == null) {
+      throw Exception('Token JWT não encontrado.');
+    }
 
-      final formData = FormData.fromMap({
-        'company_id': companyId,
-        'status_id': statusId,
-        'signer_full_name': signerFullName,
-        'signer_phone_number': signerPhoneNumber,
-        'signer_email': signerEmail,
-        'signer_national_id': signerNationalId,
-        'document_file': MultipartFile.fromBytes(
-          documentFileBytes,
-          filename: documentFileName,
-        ),
-        'signer_photo_id_file': MultipartFile.fromBytes(
-          photoIdFileBytes,
-          filename: photoIdFileName,
-        ),
-      });
+    final dio = Dio();
 
-      final response = await http.get(
-        Uri.parse('$_baseUrl/documents'),
+    final formData = FormData.fromMap({
+      'company_id': companyId,
+      'status_id': statusId,
+      'signer_full_name': signerFullName,
+      'signer_phone_number': signerPhoneNumber,
+      'signer_email': signerEmail,
+      'signer_national_id': signerNationalId,
+      'document_file': MultipartFile.fromBytes(
+        documentFileBytes,
+        filename: documentFileName,
+      ),
+      'signer_photo_id_file': MultipartFile.fromBytes(
+        photoIdFileBytes,
+        filename: photoIdFileName,
+      ),
+    });
+
+    final response = await dio.post(
+      'http://127.0.0.1:8080/documents',
+      data: formData,
+      options: Options(
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-      );
+      ),
+    );
 
-      return response.statusCode == 201;
-    } on DioException catch (e) {
-      print('Erro ao criar documento: ${e.response?.data ?? e.message}');
-      return false;
-    } catch (e) {
-      print('Erro inesperado: $e');
-      return false;
-    }
+    return response.statusCode == 201;
+  } on DioException catch (e) {
+    print('Erro ao criar documento: ${e.response?.data ?? e.message}');
+    return false;
+  } catch (e) {
+    print('Erro inesperado: $e');
+    return false;
   }
+}
 }

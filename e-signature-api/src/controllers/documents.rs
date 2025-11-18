@@ -10,35 +10,40 @@ use std::fs::{create_dir_all, File};
 use std::io::Write;
 use uuid::Uuid;
 
-
 #[post("/documents")]
 async fn create_document_handler(
     state: web::Data<AppState>,
     mut payload: Multipart,
 ) -> Result<HttpResponse, Error> {
     let mut create_request = CreateDocument::default();
-    
+
     let mut document_file_data: Vec<u8> = Vec::new();
     let mut document_filename = String::new();
     let mut photo_id_file_data: Vec<u8> = Vec::new();
     let mut photo_id_filename = String::new();
 
     while let Some(mut field) = payload.try_next().await? {
-        let field_name_opt = field.content_disposition().and_then(|d| d.get_name()).map(|s| s.to_string());
-        let filename_opt = field.content_disposition().and_then(|d| d.get_filename()).map(|s| sanitize(s).to_string());
+        let field_name_opt = field
+            .content_disposition()
+            .and_then(|d| d.get_name())
+            .map(|s| s.to_string());
+        let filename_opt = field
+            .content_disposition()
+            .and_then(|d| d.get_filename())
+            .map(|s| sanitize(s).to_string());
 
         if let Some(fname) = filename_opt {
-             let mut file_bytes = Vec::new();
+            let mut file_bytes = Vec::new();
             while let Some(chunk) = field.try_next().await? {
                 file_bytes.extend_from_slice(&chunk);
             }
-            
+
             if let Some(name) = field_name_opt {
-                 match name.as_str() {
+                match name.as_str() {
                     "document_file" => {
                         document_file_data = file_bytes;
                         document_filename = fname;
-                    },
+                    }
                     "signer_photo_id_file" => {
                         photo_id_file_data = file_bytes;
                         photo_id_filename = fname;
@@ -52,7 +57,7 @@ async fn create_document_handler(
                 field_data_bytes.extend_from_slice(&chunk);
             }
             let value = String::from_utf8(field_data_bytes).unwrap_or_default();
-            
+
             match name.as_str() {
                 "company_id" => create_request.company_id = value.parse().unwrap_or(0),
                 "status_id" => create_request.status_id = value.parse().unwrap_or(1),
@@ -68,8 +73,10 @@ async fn create_document_handler(
     if document_file_data.is_empty() {
         return Ok(HttpResponse::BadRequest().json("Arquivo PDF do documento é obrigatório."));
     }
-     if photo_id_file_data.is_empty() {
-        return Ok(HttpResponse::BadRequest().json("Arquivo da foto de identificação é obrigatório."));
+    if photo_id_file_data.is_empty() {
+        return Ok(
+            HttpResponse::BadRequest().json("Arquivo da foto de identificação é obrigatório.")
+        );
     }
 
     let upload_dir = "./uploads";
@@ -94,12 +101,14 @@ async fn create_document_handler(
     create_request.hash_sha256 = Some(hash_hex);
     create_request.photo_id_url = Some(photo_file_path);
 
-    match document_service::create_document_and_signer(&state.postgres_client, create_request).await {
+    match document_service::create_document_and_signer(&state.postgres_client, create_request).await
+    {
         Ok(document) => Ok(HttpResponse::Created().json(document)),
-        Err(e) => Ok(HttpResponse::InternalServerError().json(format!("Falha ao criar documento: {}", e))),
+        Err(e) => Ok(
+            HttpResponse::InternalServerError().json(format!("Falha ao criar documento: {}", e))
+        ),
     }
 }
-
 
 #[get("/documents")]
 async fn get_documents_handler(state: web::Data<AppState>) -> impl Responder {

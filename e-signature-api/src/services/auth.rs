@@ -6,13 +6,13 @@ use std::env;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub sub: String,
-    pub exp: usize, 
-    pub iat: usize, 
+    pub exp: usize,
+    pub iat: usize,
 }
 
 pub fn create_jwt(user_id: &str) -> Result<String, jsonwebtoken::errors::Error> {
     let expiration = Utc::now()
-        .checked_add_signed(Duration::hours(1)) 
+        .checked_add_signed(Duration::hours(1))
         .expect("valid timestamp")
         .timestamp();
 

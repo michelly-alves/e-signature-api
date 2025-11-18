@@ -46,7 +46,7 @@ pub struct Signer {
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
     pub deleted_at: Option<DateTime<Utc>>,
-     pub user_id: Option<i64>,
+    pub user_id: Option<i64>,
     pub photo_id_url: Option<String>,
 }
 
