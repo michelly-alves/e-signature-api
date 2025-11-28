@@ -6,7 +6,7 @@ pub async fn send_otp_via_whatsapp(to_number: &str, otp_code: &str) -> Result<()
     let account_sid =
         env::var("TWILIO_ACCOUNT_SID").expect("TWILIO_ACCOUNT_SID deve estar definido");
     let auth_token = env::var("TWILIO_AUTH_TOKEN").expect("TWILIO_AUTH_TOKEN deve estar definido");
-    let from_number = "whatsapp:+14155238886"; 
+    let from_number = "whatsapp:+14155238886";
 
     let url = format!(
         "https://api.twilio.com/2010-04-01/Accounts/{}/Messages.json",

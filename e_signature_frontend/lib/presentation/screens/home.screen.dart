@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../theme/app_colors.dart';
-import 'create_document_screen.dart'; 
+import 'create_document_screen.dart';
 import 'settings_screen.dart';
 import '../../providers/auth_provider.dart';
 
@@ -18,6 +18,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = Provider.of<AuthProvider>(context);
+
+    if (!auth.isAuthCheckComplete) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!auth.isAuthenticated || auth.user == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacementNamed(context, '/login');
+      });
+      return const Scaffold();
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -32,12 +47,15 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.account_circle_outlined,
-                color: AppColors.primaryText, size: 28),
+            icon: const Icon(
+              Icons.account_circle_outlined,
+              color: AppColors.primaryText,
+              size: 28,
+            ),
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
               );
             },
           ),
@@ -47,6 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Consumer<AuthProvider>(
         builder: (context, auth, child) {
           final token = auth.token;
+          final userName = auth.user?['name'] ?? "Usuário";
 
           return SingleChildScrollView(
             child: Padding(
@@ -54,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildWelcomeHeader("Michelly"),
+                  _buildWelcomeHeader(userName),
                   const SizedBox(height: 32),
                   _buildQuickActions(context, token),
                   const SizedBox(height: 40),
@@ -116,16 +135,15 @@ class _HomeScreenState extends State<HomeScreen> {
         mainAxisSpacing: 16,
       ),
       itemCount: actions.length,
-      itemBuilder: (context, index) {
-        return actions[index];
-      },
+      itemBuilder: (context, index) => actions[index],
     );
   }
 
-  Widget _buildActionCard(
-      {required IconData icon,
-      required String label,
-      required VoidCallback onTap}) {
+  Widget _buildActionCard({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -219,11 +237,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildRecentActivityItem(
-      {required IconData icon,
-      required String title,
-      required String subtitle,
-      required Color statusColor}) {
+  Widget _buildRecentActivityItem({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color statusColor,
+  }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),

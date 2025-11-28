@@ -7,28 +7,57 @@ class AuthRepository {
   final String _baseUrl = "http://localhost:8080/api";
 
   Future<String?> signIn({
-  required String email,
-  required String password,
-}) async {
-  final url = Uri.parse('$_baseUrl/auth/login');
-  final response = await http.post(
-    url,
-    headers: {'Content-Type': 'application/json'},
-    body: jsonEncode({'email': email, 'password': password}),
-  );
+    required String email,
+    required String password,
+  }) async {
+    final uri = Uri.parse("$_baseUrl/auth/login");
 
-  if (response.statusCode == 200) {
-    final data = jsonDecode(response.body);
-    final token = data['token'];
-    if (token != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('jwt_token', token);
-      return token; 
+    final response = await http.post(
+      uri,
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"email": email, "password": password}),
+    );
+
+    if (response.statusCode != 200) {
+      log("Login falhou: ${response.body}");
+      return null;
     }
+
+    // Agora pega do JSON
+    final data = jsonDecode(response.body);
+    final token = data["token"];
+
+    if (token == null) return null;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("jwt_token", token);
+
+    return token;
   }
 
-  return null;
-}
+  Future<Map<String, dynamic>?> getCurrentUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString("jwt_token");
+
+    if (token == null) return null;
+
+    final uri = Uri.parse("$_baseUrl/users/me");
+
+    final response = await http.get(
+      uri,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer $token",
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+
+    log("Erro ao obter usuário atual: ${response.statusCode} ${response.body}");
+    return null;
+  }
 
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -39,9 +68,10 @@ class AuthRepository {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('jwt_token');
   }
-Future<bool> verifyFace(String imageBase64, String nationalId) async {
-    final url = Uri.parse('$_baseUrl/signers/$nationalId/facial-verify');
-    
+
+  Future<bool> verifyFace(String imageBase64, String signerId) async {
+    final url = Uri.parse('$_baseUrl/signers/$signerId/facial-verify');
+
     try {
       final response = await http.post(
         url,
@@ -57,30 +87,25 @@ Future<bool> verifyFace(String imageBase64, String nationalId) async {
         return false;
       }
     } catch (e) {
-      log('Erro na chamada da API de verificação facial: $e');
+      log('Erro na chamada da API: $e');
       return false;
     }
   }
 
   Future<bool> createUser(Map<String, dynamic> userData) async {
-    final url = Uri.parse('$_baseUrl/users'); 
+    final url = Uri.parse('$_baseUrl/users');
+
     try {
-        final response = await http.post(
+      final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(userData),
       );
 
-      if (response.statusCode == 201) {
-        return true;
-      } else {
-        log('Erro no cadastro: ${response.statusCode} - ${response.body}');
-        return false;
-      }
+      return response.statusCode == 201;
     } catch (e) {
-      log('Erro na chamada da API de criação de usuário: $e');
+      log('Erro ao criar usuário: $e');
       return false;
     }
   }
 }
-

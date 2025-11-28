@@ -41,28 +41,33 @@ async fn main() -> std::io::Result<()> {
 
     println!("Servidor iniciado em http://127.0.0.1:8080");
 
-    HttpServer::new(move || {
-        App::new()
-            .wrap(Logger::default())
-            .app_data(web::Data::new(AppState {
-                postgres_client: pool.clone(),
-            }))
-            .service(root)
-            .service(controllers::otp::generate_otp)
-            .service(controllers::otp::verify_otp)
-            .configure(controllers::users::config)
-            .configure(controllers::telegram::config)
-            .configure(controllers::documents::config)
-            .app_data(telegram_data.clone())
-            .wrap(
-                Cors::default()
-                    .allow_any_origin()
-                    .allow_any_method()
-                    .allow_any_header()
-                    .max_age(3600),
-            )
-    })
-    .bind(("127.0.0.1", 8080))?
-    .run()
-    .await
+HttpServer::new(move || {
+    App::new()
+        .wrap(Logger::default())
+        .app_data(web::Data::new(AppState {
+            postgres_client: pool.clone(),
+        }))
+        .wrap(
+            Cors::default()
+                .allowed_origin("http://localhost:7432")
+                .allowed_origin("http://localhost:10530")
+                .allowed_methods(vec!["GET", "POST", "PUT", "PATCH", "DELETE"])
+                .allowed_headers(vec![
+                    actix_web::http::header::AUTHORIZATION,
+                    actix_web::http::header::CONTENT_TYPE,
+                ])
+                .supports_credentials()
+                .max_age(3600),
+        )
+        .service(root)
+        .service(controllers::otp::generate_otp)
+        .service(controllers::otp::verify_otp)
+        .configure(controllers::users::config)
+        .configure(controllers::telegram::config)
+        .configure(controllers::documents::config)
+        .app_data(telegram_data.clone())
+})
+.bind(("127.0.0.1", 8080))?
+.run()
+.await
 }

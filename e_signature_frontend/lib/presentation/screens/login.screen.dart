@@ -2,7 +2,7 @@ import 'package:e_signature_frontend/presentation/screens/home.screen.dart';
 import 'package:e_signature_frontend/presentation/screens/signup_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../data/repositories/auth_repository.dart'; 
+import '../../data/repositories/auth_repository.dart';
 import '../../theme/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import 'package:provider/provider.dart';
@@ -15,7 +15,6 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-
   final AuthRepository _authRepository = AuthRepository();
 
   bool isPessoaFisicaLogin = true;
@@ -38,15 +37,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.backgroundDark,
-                    AppColors.backgroundLight,
-                  ],
+                  colors: [AppColors.backgroundDark, AppColors.backgroundLight],
                 ),
               )
-            : const BoxDecoration(
-                color: AppColors.backgroundWarm,
-              ),
+            : const BoxDecoration(color: AppColors.backgroundWarm),
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 32.0),
@@ -84,8 +78,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               ? 'Número do CPF ou Email'
                               : 'Número do CNPJ ou Email',
                           style: GoogleFonts.poppins(
-                              color: AppColors.textLight,
-                              fontWeight: FontWeight.w600),
+                            color: AppColors.textLight,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         _buildTextField(controller: _emailController),
@@ -93,12 +88,15 @@ class _LoginScreenState extends State<LoginScreen> {
                         Text(
                           'Senha',
                           style: GoogleFonts.poppins(
-                              color: AppColors.textLight,
-                              fontWeight: FontWeight.w600),
+                            color: AppColors.textLight,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         _buildTextField(
-                            controller: _passwordController, isPassword: true),
+                          controller: _passwordController,
+                          isPassword: true,
+                        ),
                         const SizedBox(height: 32),
                         SizedBox(
                           width: double.infinity,
@@ -106,16 +104,21 @@ class _LoginScreenState extends State<LoginScreen> {
                             onPressed: () async {
                               final email = _emailController.text;
                               final password = _passwordController.text;
-                              
-                              final token = await _authRepository.signIn(email: email, password: password);
+
                               final navigator = Navigator.of(context);
                               final messenger = ScaffoldMessenger.of(context);
 
-                              final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                              final success = await authProvider.login(email, password);
+                              final authProvider = Provider.of<AuthProvider>(
+                                context,
+                                listen: false,
+                              );
+                              final success = await authProvider.login(
+                                email,
+                                password,
+                              );
 
-                              if (token != null ) {
-                                navigator.pushReplacement( 
+                              if (success) {
+                                navigator.pushReplacement(
                                   MaterialPageRoute(
                                     builder: (context) => const HomeScreen(),
                                   ),
@@ -123,15 +126,18 @@ class _LoginScreenState extends State<LoginScreen> {
                               } else {
                                 messenger.showSnackBar(
                                   const SnackBar(
-                                      backgroundColor: Colors.redAccent,
-                                      content: Text('Credenciais inválidas. Tente novamente.')),
+                                    backgroundColor: Colors.redAccent,
+                                    content: Text(
+                                      'Credenciais inválidas. Tente novamente.',
+                                    ),
+                                  ),
                                 );
                               }
                             },
+
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primaryDarkBlue,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 16),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(30),
                               ),
@@ -156,21 +162,26 @@ class _LoginScreenState extends State<LoginScreen> {
                               Text(
                                 'Esqueci minha senha',
                                 style: GoogleFonts.poppins(
-                                    color: AppColors.textLight),
+                                  color: AppColors.textLight,
+                                ),
                               ),
                               const SizedBox(height: 8),
                               InkWell(
                                 onTap: () {
                                   Navigator.push(
                                     context,
-                                    MaterialPageRoute(builder: (context) => const SignUpScreen()),
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const SignUpScreen(),
+                                    ),
                                   );
                                 },
                                 child: Text.rich(
                                   TextSpan(
                                     text: 'Não tem uma conta? ',
                                     style: GoogleFonts.poppins(
-                                        color: AppColors.textLight),
+                                      color: AppColors.textLight,
+                                    ),
                                     children: [
                                       TextSpan(
                                         text: 'Cadastre-se',
@@ -198,8 +209,10 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildTextField(
-      {bool isPassword = false, TextEditingController? controller}) {
+  Widget _buildTextField({
+    bool isPassword = false,
+    TextEditingController? controller,
+  }) {
     return TextFormField(
       controller: controller,
       obscureText: isPassword,
@@ -255,7 +268,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   height: 2,
                   color: AppColors.primaryPink,
                   margin: const EdgeInsets.only(top: 2),
-                )
+                ),
             ],
           ),
         ),
@@ -278,8 +291,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   color: isPessoaFisicaLogin
                       ? AppColors.primaryPink
                       : AppColors.textLight,
-                  fontWeight:
-                      isPessoaFisicaLogin ? FontWeight.bold : FontWeight.normal,
+                  fontWeight: isPessoaFisicaLogin
+                      ? FontWeight.bold
+                      : FontWeight.normal,
                 ),
               ),
               if (isPessoaFisicaLogin)
@@ -288,7 +302,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   height: 2,
                   color: AppColors.primaryPink,
                   margin: const EdgeInsets.only(top: 2),
-                )
+                ),
             ],
           ),
         ),

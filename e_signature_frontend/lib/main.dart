@@ -5,8 +5,9 @@ import 'package:flutter/material.dart';
 import 'theme/app_colors.dart';
 import 'package:provider/provider.dart';
 
-void main() {
-  runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -23,15 +24,15 @@ class MyApp extends StatelessWidget {
           primaryColor: AppColors.primaryButton,
           visualDensity: VisualDensity.adaptivePlatformDensity,
         ),
-        home: Consumer<AuthProvider>(
-          builder: (context, auth, _) {
-            if (auth.isAuthenticated) {
-              return const HomeScreen();
-            } else {
-              return const LoginScreen();
-            }
-          },
-        ),
+home: Consumer<AuthProvider>(
+  builder: (context, auth, _) {
+    if (auth.isAuthenticated) {
+      return const HomeScreen();
+    } else {
+      return const LoginScreen();
+    }
+  },
+),
         routes: {
           '/login': (context) => const LoginScreen(),
           '/home': (context) => const HomeScreen(),

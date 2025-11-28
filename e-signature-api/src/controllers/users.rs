@@ -6,6 +6,9 @@ use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse, Responde
 use serde::Deserialize;
 use serde_json;
 //use crate::services::users::services::{FaceEnrollmentRequest, FaceVerificationRequest};
+use actix_web::cookie::{Cookie, SameSite};
+use actix_web::http::header;
+use header::HeaderValue;
 
 #[derive(Deserialize)]
 pub struct LoginPayload {
@@ -18,18 +21,29 @@ pub struct FaceVerificationPayload {
     live_image_base64: String,
 }
 
-#[post("/auth/login")]
+#[post("auth/login")]
 pub async fn login_handler(
     state: web::Data<AppState>,
     body: web::Json<LoginPayload>,
 ) -> impl Responder {
-    let user = match sqlx::query_as::<_, User>("SELECT user_id, email, password_hash, role, created_at, updated_at, deleted_at FROM user_account WHERE email = $1 AND deleted_at IS NULL")
-        .bind(&body.email)
-        .fetch_one(&state.postgres_client)
-        .await
+    let user = match sqlx::query_as!(
+        User,
+        r#"
+        SELECT user_id, email, password_hash, role as "role: _", created_at as "created_at!", updated_at, deleted_at
+        FROM user_account 
+        WHERE email = $1 AND deleted_at IS NULL
+        "#,
+        &body.email
+    )
+    .fetch_one(&state.postgres_client)
+    .await
     {
         Ok(user) => user,
-        Err(_) => return HttpResponse::Unauthorized().json(serde_json::json!({"error": "Invalid credentials"})),
+        Err(_) => {
+            return HttpResponse::Unauthorized().json(
+                serde_json::json!({"error": "Invalid credentials"})
+            )
+        }
     };
 
     let valid_password = bcrypt::verify(&body.password, &user.password_hash).unwrap_or(false);
@@ -40,7 +54,20 @@ pub async fn login_handler(
     }
 
     match auth::create_jwt(&user.user_id.to_string()) {
-        Ok(token) => HttpResponse::Ok().json(serde_json::json!({ "token": token })),
+        Ok(token) => {
+            let token_string = token.clone();
+
+            let cookie = Cookie::build("auth", token)
+                .http_only(true)
+                .secure(true)
+                .same_site(SameSite::None)
+                .path("/")
+                .finish();
+
+            HttpResponse::Ok()
+                .cookie(cookie)
+                .json(serde_json::json!({ "token": token_string }))
+        }
         Err(_) => HttpResponse::InternalServerError()
             .json(serde_json::json!({"error": "Failed to create token"})),
     }
@@ -113,16 +140,16 @@ async fn get_signer_by_id_handler(
     }
 }
 
-#[post("/signers/{national_id}/facial-verify")]
+#[post("/signers/{signer_id}/facial-verify")]
 pub async fn verify_signer_face_handler(
     state: web::Data<AppState>,
     path: web::Path<String>,
     body: web::Json<FaceVerificationPayload>,
 ) -> impl Responder {
-    let national_id = path.into_inner();
+    let signer_id = path.into_inner();
     match user_service::verify_signer_face(
         &state.postgres_client,
-        &national_id,
+        &signer_id,
         &body.live_image_base64,
     )
     .await
@@ -131,7 +158,7 @@ pub async fn verify_signer_face_handler(
             HttpResponse::Ok().json(serde_json::json!({ "match": match_result }))
         }
         Ok(None) => {
-            HttpResponse::NotFound().json(serde_json::json!({ "error": "Signer not found" }))
+            HttpResponse::NotFound().json(serde_json::json!({ "error": "Signer not found:"}))
         }
         Err(e) => HttpResponse::InternalServerError()
             .json(serde_json::json!({ "error": format!("Verification failed: {}", e) })),
@@ -174,58 +201,47 @@ async fn delete_user_handler(state: web::Data<AppState>, path: web::Path<i64>) -
         }
     }
 }
-
 #[get("/users/me")]
 async fn get_current_user_handler(req: HttpRequest, state: web::Data<AppState>) -> impl Responder {
-    let auth_header = match req.headers().get("Authorization") {
-        Some(header) => header,
+    // 1) Extrai Authorization: Bearer <token>
+    let token = match req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+    {
+        Some(t) => t.to_string(),
         None => {
-            return HttpResponse::Unauthorized().json(serde_json::json!({
-                "message": "Token de autorização não fornecido.",
-                "received_token": null
-            }));
+            return HttpResponse::Unauthorized()
+                .json(serde_json::json!({"message": "Authorization header missing"}));
         }
     };
 
-    let auth_str = match auth_header.to_str() {
-        Ok(s) => s,
+    // 2) Valida JWT
+    let claims = match auth::validate_jwt(&token) {
+        Ok(c) => c,
         Err(_) => {
-            return HttpResponse::BadRequest().json(serde_json::json!({
-                "message": "Valor de cabeçalho inválido.",
-                "received_header": format!("{:?}", auth_header)
-            }));
+            return HttpResponse::Unauthorized()
+                .json(serde_json::json!({"message": "Invalid or expired token"}));
         }
     };
 
-    if !auth_str.starts_with("Bearer ") {
-        return HttpResponse::BadRequest().json(serde_json::json!({
-            "message": "Formato de token inválido. Use: Bearer <token>",
-            "received_header": auth_str
-        }));
-    }
-
-    let token = &auth_str["Bearer ".len()..];
-
-    match auth::validate_jwt(token) {
-        Ok(claims) => {
-            let user_id: i64 = claims.sub.parse().unwrap_or(0);
-            match user_service::get_user_by_id(&state.postgres_client, user_id).await {
-                Ok(Some(user)) => HttpResponse::Ok().json(user),
-                Ok(None) => {
-                    HttpResponse::NotFound().json(serde_json::json!("Usuário não encontrado."))
-                }
-                Err(_) => HttpResponse::InternalServerError()
-                    .json(serde_json::json!("Falha ao buscar usuário.")),
-            }
+    // 3) Converte ID
+    let user_id: i64 = match claims.sub.parse() {
+        Ok(id) => id,
+        Err(_) => {
+            return HttpResponse::BadRequest()
+                .json(serde_json::json!({"message": "Invalid user ID"}));
         }
-        Err(_) => HttpResponse::Unauthorized().json(serde_json::json!({
-            "message": "Token inválido ou expirado.",
-            "received_token": token
-        })),
+    };
+
+    // 4) Busca usuário
+    match user_service::get_user_by_id(&state.postgres_client, user_id).await {
+        Ok(Some(user)) => HttpResponse::Ok().json(user),
+        Ok(None) => HttpResponse::NotFound().json("User not found"),
+        Err(_) => HttpResponse::InternalServerError().json("Failed to retrieve user"),
     }
 }
-
-/* */
 
 pub fn config(cfg: &mut web::ServiceConfig) {
     println!("Módulo users carregado!");

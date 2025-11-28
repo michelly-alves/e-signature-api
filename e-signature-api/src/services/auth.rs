@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use std::env;
 
@@ -22,17 +22,21 @@ pub fn create_jwt(user_id: &str) -> Result<String, jsonwebtoken::errors::Error> 
         exp: expiration as usize,
     };
 
-    let secret = env::var("JSON_WEB_TOKEN_SECRET").expect("JWT_SECRET must be set");
-    let header = Header::default();
+    // Chave correta
+    let secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+
+    let header = Header::new(Algorithm::HS256);
     let encoding_key = EncodingKey::from_secret(secret.as_ref());
 
     encode(&header, &claims, &encoding_key)
 }
 
 pub fn validate_jwt(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
-    let secret = env::var("JSON_WEB_TOKEN_SECRET").expect("JWT_SECRET must be set");
+    let secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
     let decoding_key = DecodingKey::from_secret(secret.as_ref());
-    let validation = Validation::default();
+
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_exp = true;
 
     decode::<Claims>(token, &decoding_key, &validation).map(|data| data.claims)
 }

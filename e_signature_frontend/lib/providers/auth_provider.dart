@@ -3,11 +3,14 @@ import 'dart:developer';
 import '../data/repositories/auth_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class AuthProvider with ChangeNotifier {
+class AuthProvider extends ChangeNotifier {
   final AuthRepository _authRepository = AuthRepository();
 
   String? _token;
   String? get token => _token;
+
+  Map<String, dynamic>? _user;
+  Map<String, dynamic>? get user => _user;
 
   bool _isAuthenticated = false;
   bool get isAuthenticated => _isAuthenticated;
@@ -19,50 +22,76 @@ class AuthProvider with ChangeNotifier {
   bool get isAuthCheckComplete => _isAuthCheckComplete;
 
   AuthProvider() {
-    log('AuthProvider: Inicializando...');
     _loadTokenFromPrefs();
   }
 
   Future<void> _loadTokenFromPrefs() async {
-    log('AuthProvider: Carregando token do SharedPreferences...');
     final prefs = await SharedPreferences.getInstance();
     _token = prefs.getString('jwt_token');
-    _isAuthenticated = _token != null;
+
+    if (_token != null) {
+      _user = await _authRepository.getCurrentUser();
+
+      // Se falhar, invalida sessão
+      if (_user == null) {
+        await prefs.remove('jwt_token');
+        _token = null;
+        _isAuthenticated = false;
+      } else {
+        _isAuthenticated = true;
+      }
+    }
+
     _isAuthCheckComplete = true;
-    log('AuthProvider: Token carregado: ${_token != null}');
     notifyListeners();
   }
 
-Future<bool> login(String email, String password) async {
-  _isLoading = true;
-  notifyListeners();
+  Future<bool> login(String email, String password) async {
+    _isLoading = true;
+    notifyListeners();
 
-  final token = await _authRepository.signIn(email: email, password: password);
-  final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
 
-  if (token != null) {
-    _token = token;
-    _isAuthenticated = true;
-    await prefs.setString('jwt_token', token);
-    log('AuthProvider: Token salvo no login: $_token');
-  } else {
-    _token = null;
-    _isAuthenticated = false;
-    await prefs.remove('jwt_token');
-    log('AuthProvider: Falha no login, token removido');
+    final token = await _authRepository.signIn(
+      email: email,
+      password: password,
+    );
+
+    if (token != null) {
+      await prefs.setString('jwt_token', token);
+
+      _token = token;
+      _isAuthenticated = true;
+
+      // Buscar usuário
+      _user = await _authRepository.getCurrentUser();
+      if (_user == null) {
+        // Token inválido, remove
+        await prefs.remove('jwt_token');
+        _token = null;
+        _isAuthenticated = false;
+      }
+    } else {
+      await prefs.remove('jwt_token');
+      _token = null;
+      _user = null;
+      _isAuthenticated = false;
+    }
+
+    _isLoading = false;
+    notifyListeners();
+
+    return _isAuthenticated;
   }
 
-  _isLoading = false;
-  notifyListeners();
-  return _isAuthenticated;
-}
-
   Future<void> logout() async {
-    _token = null;
-    _isAuthenticated = false;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('jwt_token');
-    log('AuthProvider: Logout realizado. Token removido.');
+
+    _token = null;
+    _user = null;
+    _isAuthenticated = false;
+
     notifyListeners();
   }
 }
