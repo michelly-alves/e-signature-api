@@ -53,8 +53,6 @@ pub struct User {
     pub updated_at: Option<DateTime<Utc>>,
     #[serde(skip)]
     pub deleted_at: Option<DateTime<Utc>>,
-    #[serde(skip_serializing)] 
-    pub face_embedding: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,4 +72,19 @@ pub struct CreateUser {
 pub struct UpdateUser {
     pub email: Option<String>,
     pub role: Option<Role>,
+}
+
+#[derive(Serialize, FromRow, Debug)]
+pub struct Signer {
+    pub signer_id: i64,
+    pub full_name: String,
+    pub national_id: String,
+    pub phone_number: String,
+    pub contact_email: String,
+    pub public_key: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub deleted_at: Option<DateTime<Utc>>,
+    pub user_id: Option<i64>,
+    pub photo_id_url: Option<String>,
 }

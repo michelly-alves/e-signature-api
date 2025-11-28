@@ -1,4 +1,5 @@
 use crate::services::telegram::models::TelegramLink;
+use actix_cors::Cors;
 use actix_web::middleware::Logger;
 use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
 use dotenv::dotenv;
@@ -51,7 +52,15 @@ async fn main() -> std::io::Result<()> {
             .service(controllers::otp::verify_otp)
             .configure(controllers::users::config)
             .configure(controllers::telegram::config)
+            .configure(controllers::documents::config)
             .app_data(telegram_data.clone())
+            .wrap(
+                Cors::default()
+                    .allow_any_origin()
+                    .allow_any_method()
+                    .allow_any_header()
+                    .max_age(3600),
+            )
     })
     .bind(("127.0.0.1", 8080))?
     .run()

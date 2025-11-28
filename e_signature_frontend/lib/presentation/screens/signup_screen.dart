@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../theme/app_colors.dart'; 
+import 'package:http/http.dart' as http; 
+import 'dart:convert'; 
+
+import '../../data/repositories/auth_repository.dart';
+import '../../theme/app_colors.dart';
+import 'otp_verification_screen.dart'; 
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -10,203 +15,401 @@ class SignUpScreen extends StatefulWidget {
 }
 
 class _SignUpScreenState extends State<SignUpScreen> {
-  bool isPessoaFisica = true;
+  bool isPessoaFisica = true; 
+  bool _isLoading = false; 
+
+  final _authRepository = AuthRepository();
+
+  final nameController = TextEditingController();
+  final cpfController = TextEditingController();
+  final birthController = TextEditingController();
+  final emailController = TextEditingController();
+  final phoneController = TextEditingController(); 
+  final passwordController = TextEditingController();
+
+  final companyNameController = TextEditingController();
+  final cnpjController = TextEditingController();
+  final companyEmailController = TextEditingController();
+  final companyPhoneController = TextEditingController(); 
+  final companyPasswordController = TextEditingController();
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    cpfController.dispose();
+    birthController.dispose();
+    emailController.dispose();
+    phoneController.dispose();
+    passwordController.dispose();
+    companyNameController.dispose();
+    cnpjController.dispose();
+    companyEmailController.dispose();
+    companyPhoneController.dispose();
+    companyPasswordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _register() async {
+    if (_isFormInvalid()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            backgroundColor: Colors.redAccent,
+            content: Text('Por favor, preencha todos os campos obrigatórios.')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    final activeEmail = isPessoaFisica ? emailController.text : companyEmailController.text;
+    final activePhone = isPessoaFisica ? phoneController.text : companyPhoneController.text;
+
+    final userData = isPessoaFisica
+        ? {
+            "email": activeEmail,
+            "password": passwordController.text,
+            "role": "Signer",
+            "full_name": nameController.text,
+            "national_id": cpfController.text,
+            "phone_number": activePhone
+          }
+        : {
+            "email": activeEmail,
+            "password": companyPasswordController.text,
+            "role": "Company",
+            "legal_name": companyNameController.text,
+            "tax_id": cnpjController.text,
+            "phone_number": activePhone
+          };
+
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    try {
+      final success = await _authRepository.createUser(userData);
+
+      if (success) {
+        final otpResponse = await http.post(
+          Uri.parse("http://localhost:8080/otp/generate"), 
+          headers: {"Content-Type": "application/json"},
+          body: json.encode({
+            "email": activeEmail,
+            "phone_number": activePhone,
+          }),
+        );
+
+        if (otpResponse.statusCode == 200) {
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => OtpVerificationScreen(email: activeEmail),
+              ),
+            );
+          }
+        } else {
+          scaffoldMessenger.showSnackBar(SnackBar(
+              backgroundColor: Colors.orange,
+              content: Text('Conta criada, mas erro ao enviar OTP: ${otpResponse.body}')));
+        }
+      } else {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+              backgroundColor: Colors.redAccent,
+              content: Text('Erro ao cadastrar usuário. Verifique os dados ou tente outro e-mail.')),
+        );
+      }
+    } catch (e) {
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+            backgroundColor: Colors.redAccent,
+            content: Text('Erro de conexão: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  bool _isFormInvalid() {
+    if (isPessoaFisica) {
+      return nameController.text.isEmpty ||
+          cpfController.text.isEmpty ||
+          emailController.text.isEmpty ||
+          phoneController.text.isEmpty ||
+          passwordController.text.isEmpty;
+    } else {
+      return companyNameController.text.isEmpty ||
+          cnpjController.text.isEmpty ||
+          companyEmailController.text.isEmpty ||
+          companyPhoneController.text.isEmpty ||
+          companyPasswordController.text.isEmpty;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: isPessoaFisica
-            ? const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.backgroundDark,
-                    AppColors.backgroundLight,
-                  ],
-                ),
-              )
-            : const BoxDecoration( 
-                color: AppColors.backgroundWarm,
-              ),
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 40.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 400),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Cadastre-se',
-                          style: GoogleFonts.poppins(
-                            fontSize: 48,
-                            fontWeight: FontWeight.bold,
-                            color: isPessoaFisica ? AppColors.primaryPink : AppColors.primaryDarkBlue,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildProfileTypeSwitcher(),
-                        const SizedBox(height: 32),
-                        
-                        if (isPessoaFisica)
-                          _buildPessoaFisicaForm()
-                        else
-                          _buildEmpresaForm(),
+      backgroundColor: AppColors.background,
+      body: Center(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth > 900) { 
+              return _buildWideLayout();
+            } else {
+              return _buildNarrowLayout();
+            }
+          },
+        ),
+      ),
+    );
+  }
 
-                        const SizedBox(height: 40),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: () {
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primaryDarkBlue,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                            ),
-                            child: Text(
-                              'Entrar',
-                              style: GoogleFonts.poppins(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (MediaQuery.of(context).size.width > 900)
-                  const SizedBox(width: 64),
-                if (MediaQuery.of(context).size.width > 900)
-                  Expanded(
-                    child: Image.asset(
-                      'assets/images/assinatura_garota_perfil.png', 
-                      height: 500,
-                    ),
-                  ),
-              ],
+  Widget _buildWideLayout() {
+    return Row(
+      children: [
+        Expanded(
+          flex: 5,
+          child: SingleChildScrollView(child: _buildFormSide()),
+        ),
+        Expanded(
+          flex: 4,
+          child: _buildImageSide(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNarrowLayout() {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          _buildFormSide(),
+          const SizedBox(height: 40),
+          _buildImageSide(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormSide() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 40.0, vertical: 40.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Cadastre-se',
+            style: GoogleFonts.poppins(
+              fontSize: 42,
+              fontWeight: FontWeight.bold,
+              color: AppColors.primaryText,
             ),
           ),
-        ),
+          const SizedBox(height: 8),
+          Text(
+            'Crie sua conta para começar a assinar documentos.',
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              color: AppColors.primaryText.withOpacity(0.6),
+            ),
+          ),
+          const SizedBox(height: 32),
+          
+          _buildProfileTypeSwitcher(),
+          
+          const SizedBox(height: 32),
+          
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: isPessoaFisica
+                ? _buildPessoaFisicaForm()
+                : _buildEmpresaForm(),
+          ),
+          
+          const SizedBox(height: 32),
+          
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _register,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryButton,
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: AppColors.primaryButton.withOpacity(0.6),
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 24,
+                      width: 24,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Text(
+                      'Cadastrar',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImageSide() {
+    return Padding(
+      padding: const EdgeInsets.all(20.0),
+      child: Image.asset(
+        'assets/images/assinatura_garota_perfil.png',
+        fit: BoxFit.contain,
+        height: 450,
       ),
     );
   }
 
   Widget _buildPessoaFisicaForm() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      key: const ValueKey('pessoaFisicaForm'),
       children: [
-        _buildLabeledTextField(label: 'Nome'),
-        const SizedBox(height: 24),
-        _buildLabeledTextField(label: 'CPF'),
-        const SizedBox(height: 24),
-        _buildLabeledTextField(label: 'Data de Nascimento'),
-        const SizedBox(height: 24),
-        _buildLabeledTextField(label: 'E-mail'),
-        const SizedBox(height: 24),
-        _buildLabeledTextField(label: 'Senha', isPassword: true),
+        _buildLabeledTextField(controller: nameController, label: 'Nome completo'),
+        const SizedBox(height: 16),
+        _buildLabeledTextField(controller: cpfController, label: 'CPF'),
+        const SizedBox(height: 16),
+        _buildLabeledTextField(
+          controller: phoneController, 
+          label: 'Celular (com DDD)',
+          hintText: '+55 11 99999-9999'
+        ),
+        const SizedBox(height: 16),
+        _buildLabeledTextField(controller: emailController, label: 'E-mail'),
+        const SizedBox(height: 16),
+        _buildLabeledTextField(controller: passwordController, label: 'Senha', isPassword: true),
       ],
     );
   }
 
   Widget _buildEmpresaForm() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      key: const ValueKey('empresaForm'),
       children: [
-        _buildLabeledTextField(label: 'Nome fantasia'),
-        const SizedBox(height: 24),
-        _buildLabeledTextField(label: 'CNPJ'),
-        const SizedBox(height: 24),
-        _buildLabeledTextField(label: 'E-mail'),
-        const SizedBox(height: 24),
-        _buildLabeledTextField(label: 'Senha', isPassword: true),
-        const SizedBox(height: 24),
-      ],
-    );
-  }
-  
-  Widget _buildProfileTypeSwitcher() {
-    return Row(
-      children: [
-        GestureDetector(
-          onTap: () {
-            if (!isPessoaFisica) {
-              setState(() => isPessoaFisica = true);
-            }
-          },
-          child: Text(
-            'Pessoa Física',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              color: isPessoaFisica ? AppColors.primaryPink : AppColors.textLight,
-              fontWeight: isPessoaFisica ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
+        _buildLabeledTextField(controller: companyNameController, label: 'Nome fantasia'),
+        const SizedBox(height: 16),
+        _buildLabeledTextField(controller: cnpjController, label: 'CNPJ'),
+        const SizedBox(height: 16),
+        _buildLabeledTextField(
+          controller: companyPhoneController, 
+          label: 'Celular Responsável (com DDD)',
+          hintText: '+55 11 99999-9999'
         ),
-        const SizedBox(width: 24),
-        GestureDetector(
-          onTap: () {
-            if (isPessoaFisica) {
-              setState(() => isPessoaFisica = false);
-            }
-          },
-          child: Text(
-            'Empresa',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              color: !isPessoaFisica ? AppColors.primaryPink : AppColors.textLight,
-              fontWeight: !isPessoaFisica ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-        ),
+        const SizedBox(height: 16),
+        _buildLabeledTextField(controller: companyEmailController, label: 'E-mail da Empresa'),
+        const SizedBox(height: 16),
+        _buildLabeledTextField(controller: companyPasswordController, label: 'Senha', isPassword: true),
       ],
     );
   }
 
-  Widget _buildLabeledTextField({required String label, bool isPassword = false}) {
+  Widget _buildProfileTypeSwitcher() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildSwitcherButton('Empresa', !isPessoaFisica),
+          ),
+          Expanded(
+            child: _buildSwitcherButton('Pessoa Física', isPessoaFisica),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSwitcherButton(String text, bool isSelected) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          isPessoaFisica = (text == 'Pessoa Física');
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 5,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : [],
+        ),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: GoogleFonts.poppins(
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: AppColors.primaryText,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLabeledTextField({
+    required TextEditingController controller,
+    required String label,
+    String? hintText,
+    bool isPassword = false,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
           style: GoogleFonts.poppins(
-              color: AppColors.textLight, fontWeight: FontWeight.w600),
+            color: AppColors.primaryText.withOpacity(0.8),
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(height: 8),
         TextFormField(
+          controller: controller,
           obscureText: isPassword,
           decoration: InputDecoration(
+            hintText: hintText,
+            hintStyle: TextStyle(color: Colors.grey[400]),
             filled: true,
-            fillColor: const Color(0xFFFCF8F3), 
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            fillColor: AppColors.textFieldFill,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.textFieldBorder),
+            ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                color: Color(0xFF9E9281),
-                width: 1.5,
-              ),
+              borderSide: const BorderSide(color: AppColors.textFieldBorder),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                color: AppColors.primaryDarkBlue,
-                width: 2.0,
-              ),
+              borderSide: const BorderSide(color: AppColors.primaryButton, width: 2),
             ),
+            contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
           ),
         ),
       ],

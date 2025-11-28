@@ -5,13 +5,17 @@ use crate::AppState;
 use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse, Responder};
 use serde::Deserialize;
 use serde_json;
-use crate::services::users::services::{FaceEnrollmentRequest, FaceVerificationRequest};
-
+//use crate::services::users::services::{FaceEnrollmentRequest, FaceVerificationRequest};
 
 #[derive(Deserialize)]
 pub struct LoginPayload {
     email: String,
     password: String,
+}
+
+#[derive(Deserialize)]
+pub struct FaceVerificationPayload {
+    live_image_base64: String,
 }
 
 #[post("/auth/login")]
@@ -88,6 +92,49 @@ async fn get_user_by_id_handler(
         Err(_) => {
             HttpResponse::InternalServerError().json(serde_json::json!("Failed to retrieve user."))
         }
+    }
+}
+
+#[get("/signer/{id}")]
+async fn get_signer_by_id_handler(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+) -> impl Responder {
+    let user_id = path.into_inner();
+    match user_service::get_signer_by_id(&state.postgres_client, user_id).await {
+        Ok(Some(user)) => HttpResponse::Ok().json(user),
+        Ok(None) => HttpResponse::NotFound().json(serde_json::json!(format!(
+            "User with ID {} not found.",
+            user_id
+        ))),
+        Err(_) => {
+            HttpResponse::InternalServerError().json(serde_json::json!("Failed to retrieve user."))
+        }
+    }
+}
+
+#[post("/signers/{national_id}/facial-verify")]
+pub async fn verify_signer_face_handler(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    body: web::Json<FaceVerificationPayload>,
+) -> impl Responder {
+    let national_id = path.into_inner();
+    match user_service::verify_signer_face(
+        &state.postgres_client,
+        &national_id,
+        &body.live_image_base64,
+    )
+    .await
+    {
+        Ok(Some(match_result)) => {
+            HttpResponse::Ok().json(serde_json::json!({ "match": match_result }))
+        }
+        Ok(None) => {
+            HttpResponse::NotFound().json(serde_json::json!({ "error": "Signer not found" }))
+        }
+        Err(e) => HttpResponse::InternalServerError()
+            .json(serde_json::json!({ "error": format!("Verification failed: {}", e) })),
     }
 }
 
@@ -178,31 +225,7 @@ async fn get_current_user_handler(req: HttpRequest, state: web::Data<AppState>) 
     }
 }
 
-#[post("/users/{id}/facial-enrollment")]
-async fn enroll_face_handler(
-    state: web::Data<AppState>,
-    path: web::Path<i64>,
-    body: web::Json<FaceEnrollmentRequest>,
-) -> impl Responder {
-    let user_id = path.into_inner();
-    match user_service::enroll_user_face(&state.postgres_client, user_id, body.into_inner()).await {
-        Ok(_) => HttpResponse::Ok().json("Rosto cadastrado com sucesso."),
-        Err(e) => HttpResponse::BadRequest().json(e),
-    }
-}
-
-#[post("/users/{id}/facial-verify")]
-async fn verify_face_handler(
-    state: web::Data<AppState>,
-    path: web::Path<i64>,
-    body: web::Json<FaceVerificationRequest>,
-) -> impl Responder {
-    let user_id = path.into_inner();
-    match user_service::verify_user_face(&state.postgres_client, user_id, body.into_inner()).await {
-        Ok(is_match) => HttpResponse::Ok().json(serde_json::json!({ "match": is_match })),
-        Err(e) => HttpResponse::BadRequest().json(e),
-    }
-}
+/* */
 
 pub fn config(cfg: &mut web::ServiceConfig) {
     println!("Módulo users carregado!");
@@ -217,7 +240,9 @@ pub fn config(cfg: &mut web::ServiceConfig) {
             .service(delete_user_handler)
             .service(create_user_handler)
             .service(delete_user_handler)
-            .service(enroll_face_handler)
-            .service(verify_face_handler),
+            .service(get_signer_by_id_handler)
+            .service(verify_signer_face_handler),
+        //,(enroll_face_handler)
+        //.service(verify_face_handler),
     );
 }

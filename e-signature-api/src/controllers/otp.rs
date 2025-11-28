@@ -1,3 +1,4 @@
+use crate::services::whatsapp::whatsapp;
 use actix_web::{post, web, HttpResponse, Responder};
 use chrono::{Duration, Utc};
 use rand::Rng;
@@ -8,39 +9,53 @@ use crate::AppState;
 #[derive(Deserialize)]
 pub struct OtpRequest {
     pub email: String,
+    pub phone_number: String,
 }
 
 #[derive(Serialize)]
 pub struct OtpResponse {
-    pub otp: String,
+    pub message: String,
     pub expires_at: String,
 }
-
 #[post("/otp/generate")]
 pub async fn generate_otp(data: web::Data<AppState>, req: web::Json<OtpRequest>) -> impl Responder {
     let otp_code: String = rand::thread_rng().gen_range(100_000..999_999).to_string();
-
     let expires_at = Utc::now() + Duration::minutes(5);
 
     let query = r#"
-        INSERT INTO otp_codes (email, code, expires_at, used)
-        VALUES ($1, $2, $3, FALSE)
+        INSERT INTO otp_codes (email, phone_number, code, expires_at, used)
+        VALUES ($1, $2, $3, $4, FALSE)
         ON CONFLICT (email) DO UPDATE
-        SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at, used = FALSE
+        SET code = EXCLUDED.code, 
+            expires_at = EXCLUDED.expires_at, 
+            phone_number = EXCLUDED.phone_number, 
+            used = FALSE
     "#;
 
     if let Err(err) = sqlx::query(query)
         .bind(&req.email)
+        .bind(&req.phone_number)
         .bind(&otp_code)
         .bind(expires_at)
         .execute(&data.postgres_client)
         .await
     {
-        return HttpResponse::InternalServerError().body(format!("Erro: {}", err));
+        return HttpResponse::InternalServerError()
+            .body(format!("Erro ao salvar no banco: {}", err));
     }
 
+    let phone_clone = req.phone_number.clone();
+    let code_clone = otp_code.clone();
+
+    tokio::spawn(async move {
+        match whatsapp::send_otp_via_whatsapp(&phone_clone, &code_clone).await {
+            Ok(_) => println!("OTP enviado para WhatsApp: {}", phone_clone),
+            Err(e) => eprintln!("Falha ao enviar OTP para WhatsApp: {:?}", e),
+        }
+    });
+
     HttpResponse::Ok().json(OtpResponse {
-        otp: otp_code,
+        message: "Código OTP enviado para o seu WhatsApp.".to_string(),
         expires_at: expires_at.to_rfc3339(),
     })
 }

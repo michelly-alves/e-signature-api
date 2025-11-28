@@ -1,21 +1,14 @@
+use crate::services::documents::models::Signer;
 use crate::services::users::models::{CreateUser, Role, UpdateUser, User};
+use base64::{engine::general_purpose, Engine as _};
 use bcrypt::{hash, DEFAULT_COST};
 use chrono::Utc;
+use serde_json::json;
 use sqlx::PgPool;
-use image::load_from_memory;
-use face_detector::{FaceDetector, LandmarkDetector, FaceEmbedder};
-use std::convert::TryInto;
-use base64::{Engine as _, engine::general_purpose};
-
-#[derive(serde::Deserialize, Debug)]
-pub struct FaceEnrollmentRequest {
-    pub image_base64: String,
-}
-
-#[derive(serde::Deserialize, Debug)]
-pub struct FaceVerificationRequest {
-    pub image_base64: String,
-}
+use std::fs;
+use std::io::Write;
+use std::process::Command;
+use std::process::Stdio;
 
 pub async fn create_user(pool: &PgPool, new_user: CreateUser) -> Result<User, sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -63,10 +56,12 @@ pub async fn create_user(pool: &PgPool, new_user: CreateUser) -> Result<User, sq
         let full_name = new_user
             .full_name
             .ok_or_else(|| sqlx::Error::Protocol("Missing 'full_name' for Signer user".into()))?;
-        let phone_number = new_user.phone_number
-            .ok_or_else(|| sqlx::Error::Protocol("Missing 'phone_number' for signer user".into()))?;
-        let national_id = new_user.national_id
-            .ok_or_else(|| sqlx::Error::Protocol("Missing 'national_id' (CPF) for signer user".into()))?;
+        let phone_number = new_user.phone_number.ok_or_else(|| {
+            sqlx::Error::Protocol("Missing 'phone_number' for signer user".into())
+        })?;
+        let national_id = new_user.national_id.ok_or_else(|| {
+            sqlx::Error::Protocol("Missing 'national_id' (CPF) for signer user".into())
+        })?;
 
         sqlx::query!(
             r#"
@@ -118,6 +113,25 @@ pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>,
     Ok(user)
 }
 
+pub async fn get_signer_by_id(
+    pool: &PgPool,
+    signer_id: i64,
+) -> Result<Option<Signer>, sqlx::Error> {
+    let signer = sqlx::query_as::<_, Signer>(
+        r#"
+    SELECT photo_id_url, user_id, signer_id, full_name, national_id, phone_number,
+           public_key, contact_email, created_at, updated_at, deleted_at
+    FROM signer
+    WHERE signer_id = $1 AND deleted_at IS NULL
+    "#,
+    )
+    .bind(signer_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(signer)
+}
+
 pub async fn update_user(
     pool: &PgPool,
     user_id: i64,
@@ -164,87 +178,86 @@ pub async fn delete_user(pool: &PgPool, user_id: i64) -> Result<u64, sqlx::Error
     Ok(result.rows_affected())
 }
 
-pub async fn enroll_user_face(pool: &PgPool, user_id: i64, request: FaceEnrollmentRequest) -> Result<(), String> {
-    // 1. Decodifica a imagem Base64 recebida
-    let image_bytes = general_purpose::STANDARD.decode(&request.image_base64)
-        .map_err(|e| format!("Erro ao decodificar a imagem: {}", e))?;
-
-    // 2. Processa a imagem para extrair o embedding
-    let embedding = tokio::task::spawn_blocking(move || {
-        extract_embedding_from_image(image_bytes)
-    }).await.map_err(|e| format!("Erro no processamento da imagem: {}", e))?
-     .ok_or_else(|| "Nenhum rosto encontrado na imagem de cadastro.".to_string())?;
-
-    // 3. Salva o embedding no banco de dados
-    sqlx::query!(
-        "UPDATE user_account SET face_embedding = $1 WHERE user_id = $2",
-        &embedding,
-        user_id
+pub async fn verify_signer_face(
+    pool: &PgPool,
+    national_id: &str,
+    live_image_base64: &str,
+) -> Result<Option<bool>, sqlx::Error> {
+    // 1. Busca o signatário
+    let signer_record = sqlx::query!(
+        r#"
+        SELECT photo_id_url
+        FROM signer
+        WHERE national_id = $1 AND deleted_at IS NULL
+        "#,
+        national_id
     )
-    .execute(pool)
-    .await
-    .map_err(|e| format!("Erro ao salvar embedding no banco: {}", e))?;
+    .fetch_optional(pool)
+    .await?;
 
-    Ok(())
-}
+    let record = match signer_record {
+        Some(r) => r,
+        None => return Ok(None),
+    };
 
-/// Verifica o rosto de um usuário contra o embedding armazenado
-pub async fn verify_user_face(pool: &PgPool, user_id: i64, request: FaceVerificationRequest) -> Result<bool, String> {
-    // 1. Busca o embedding de referência do banco
-    let record = sqlx::query!("SELECT face_embedding FROM user_account WHERE user_id = $1", user_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| format!("Erro ao buscar usuário: {}", e))?
-        .ok_or_else(|| "Usuário não encontrado.".to_string())?;
+    let reference_photo_path = match record.photo_id_url {
+        Some(path) => path,
+        None => {
+            return Err(sqlx::Error::Protocol(
+                "Signatário sem foto de referência.".into(),
+            ))
+        }
+    };
 
-    let reference_embedding_bytes = record.face_embedding
-        .ok_or_else(|| "Nenhum rosto cadastrado para este usuário.".to_string())?;
-    
-    // 2. Decodifica e processa a nova imagem
-    let image_bytes = general_purpose::STANDARD.decode(&request.image_base64)
-        .map_err(|e| format!("Erro ao decodificar a imagem: {}", e))?;
+    // 2. Lê a imagem de referência e converte para base64
+    let reference_image_bytes = fs::read(&reference_photo_path)
+        .map_err(|e| sqlx::Error::Protocol(format!("Erro ao ler a foto de referência: {}", e)))?;
+    let reference_image_base64 = general_purpose::STANDARD.encode(&reference_image_bytes);
 
-    let new_embedding = tokio::task::spawn_blocking(move || {
-        extract_embedding_from_image(image_bytes)
-    }).await.map_err(|e| format!("Erro no processamento da imagem: {}", e))?
-     .ok_or_else(|| "Nenhum rosto encontrado na imagem de verificação.".to_string())?;
+    // 3. Chama script Python
+    let mut child = Command::new("python")
+        .arg("./scripts/compare_faces.py")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| sqlx::Error::Protocol(format!("Erro ao iniciar Python: {}", e)))?;
 
-    // 3. Compara os embeddings
-    let distance = face_detector::distance(&reference_embedding_bytes, &new_embedding);
+    // 4. Envia JSON para o Python via stdin
+    let input_json = json!({
+        "ref_image_base64": reference_image_base64,
+        "live_image_base64": live_image_base64
+    });
 
-    // O valor de threshold 0.6 é um padrão comum. Valores menores indicam maior similaridade.
-    // Você pode ajustar este valor conforme necessário.
-    const SIMILARITY_THRESHOLD: f32 = 0.6; 
+    let stdin = child.stdin.as_mut().ok_or_else(|| {
+        sqlx::Error::Protocol("Não foi possível abrir stdin do processo Python.".into())
+    })?;
+    stdin
+        .write_all(input_json.to_string().as_bytes())
+        .map_err(|e| sqlx::Error::Protocol(format!("Erro ao escrever stdin: {}", e)))?;
 
-    Ok(distance < SIMILARITY_THRESHOLD)
-}
+    // 5. Recebe resultado do Python
+    let output = child
+        .wait_with_output()
+        .map_err(|e| sqlx::Error::Protocol(format!("Erro ao executar Python: {}", e)))?;
 
-
-/// Função auxiliar para extrair o embedding de uma imagem
-/// Esta função é computacionalmente intensiva e deve ser rodada em um blocking thread.
-fn extract_embedding_from_image(image_bytes: Vec<u8>) -> Option<Vec<u8>> {
-    // Carrega os modelos. Em uma aplicação real, você faria isso apenas uma vez no início.
-    let face_detector = FaceDetector::new().ok()?;
-    let landmark_detector = LandmarkDetector::new().ok()?;
-    let face_embedder = FaceEmbedder::new().ok()?;
-
-    let image = load_from_memory(&image_bytes).ok()?.to_rgb8();
-    let (width, height) = image.dimensions();
-    
-    let faces = face_detector.detect(&image.into_raw(), width as usize, height as usize, 1);
-
-    // Usa apenas o primeiro rosto encontrado na imagem
-    if let Some(face) = faces.into_iter().next() {
-        let landmarks = landmark_detector.detect(&face);
-        let embedding: [f32; 128] = face_embedder.embed(&landmarks);
-        
-        // Converte o array de f32 para Vec<u8> para salvar no banco
-        let embedding_bytes: Vec<u8> = embedding
-            .iter()
-            .flat_map(|&f| f.to_ne_bytes().to_vec())
-            .collect();
-        return Some(embedding_bytes);
+    if !output.status.success() {
+        return Err(sqlx::Error::Protocol(format!(
+            "Python retornou erro: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
     }
-    
-    None
+
+    let output_json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| sqlx::Error::Protocol(format!("Erro ao parsear JSON do Python: {}", e)))?;
+
+    let match_result = output_json
+        .get("match")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    println!("Base64 reference length: {}", reference_image_base64.len());
+    println!("Base64 live image length: {}", live_image_base64.len());
+    println!("Resultado da comparação: {}", match_result);
+
+    Ok(Some(match_result))
 }

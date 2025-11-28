@@ -1,7 +1,11 @@
+import 'package:e_signature_frontend/presentation/screens/home.screen.dart';
 import 'package:e_signature_frontend/presentation/screens/signup_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../theme/app_colors.dart'; 
+import '../../data/repositories/auth_repository.dart'; 
+import '../../theme/app_colors.dart';
+import '../../providers/auth_provider.dart';
+import 'package:provider/provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -11,14 +15,26 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+
+  final AuthRepository _authRepository = AuthRepository();
+
   bool isPessoaFisicaLogin = true;
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
         decoration: isPessoaFisicaLogin
-            ? const BoxDecoration( 
+            ? const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -41,7 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 if (MediaQuery.of(context).size.width > 900)
                   Expanded(
                     child: Image.asset(
-                      'assets/images/garota_notebook.png', 
+                      'assets/images/garota_notebook.png',
                       height: 500,
                     ),
                   ),
@@ -72,7 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 8),
-                        _buildTextField(),
+                        _buildTextField(controller: _emailController),
                         const SizedBox(height: 24),
                         Text(
                           'Senha',
@@ -81,13 +97,36 @@ class _LoginScreenState extends State<LoginScreen> {
                               fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 8),
-                        _buildTextField(isPassword: true),
+                        _buildTextField(
+                            controller: _passwordController, isPassword: true),
                         const SizedBox(height: 32),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: () {
-                              // TODO: Adicionar lógica de login
+                            onPressed: () async {
+                              final email = _emailController.text;
+                              final password = _passwordController.text;
+                              
+                              final token = await _authRepository.signIn(email: email, password: password);
+                              final navigator = Navigator.of(context);
+                              final messenger = ScaffoldMessenger.of(context);
+
+                              final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                              final success = await authProvider.login(email, password);
+
+                              if (token != null ) {
+                                navigator.pushReplacement( 
+                                  MaterialPageRoute(
+                                    builder: (context) => const HomeScreen(),
+                                  ),
+                                );
+                              } else {
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                      backgroundColor: Colors.redAccent,
+                                      content: Text('Credenciais inválidas. Tente novamente.')),
+                                );
+                              }
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primaryDarkBlue,
@@ -159,8 +198,10 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildTextField({bool isPassword = false}) {
+  Widget _buildTextField(
+      {bool isPassword = false, TextEditingController? controller}) {
     return TextFormField(
+      controller: controller,
       obscureText: isPassword,
       decoration: InputDecoration(
         filled: true,
@@ -210,7 +251,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               if (!isPessoaFisicaLogin)
                 Container(
-                  width: 150, 
+                  width: 150,
                   height: 2,
                   color: AppColors.primaryPink,
                   margin: const EdgeInsets.only(top: 2),
@@ -218,10 +259,10 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 8), 
+        const SizedBox(height: 8),
         GestureDetector(
           onTap: () {
-            if (!isPessoaFisicaLogin) { 
+            if (!isPessoaFisicaLogin) {
               setState(() {
                 isPessoaFisicaLogin = true;
               });
