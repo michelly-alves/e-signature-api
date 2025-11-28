@@ -188,8 +188,11 @@ Future<void> _createDocument() async {
           IconButton(
             icon: const Icon(Icons.close, size: 20),
             onPressed: () => setState(() {
-              if (isDocument) _pickedDocumentFile = null;
-              else _pickedPhotoIdFile = null;
+              if (isDocument) {
+                _pickedDocumentFile = null;
+              } else {
+                _pickedPhotoIdFile = null;
+              }
             }),
           )
         ],
